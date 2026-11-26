@@ -303,6 +303,10 @@ func (c *Client) SendVideo(to types.JID, data []byte, caption string, gifPlaybac
 }
 
 func (c *Client) SendAudio(to types.JID, data []byte, ptt bool, quoted *events.Message) error {
+	return c.SendAudioWithCard(to, data, ptt, "", "", "", "", nil, quoted)
+}
+
+func (c *Client) SendAudioWithCard(to types.JID, data []byte, ptt bool, title, body, sourceURL, thumbURL string, thumb []byte, quoted *events.Message) error {
 	up, err := c.wa.Upload(context.Background(), data, whatsmeow.MediaAudio)
 	if err != nil {
 		return err
@@ -310,6 +314,21 @@ func (c *Client) SendAudio(to types.JID, data []byte, ptt bool, quoted *events.M
 	mime := "audio/mpeg"
 	if ptt {
 		mime = "audio/ogg; codecs=opus"
+	}
+	ci := c.quotedContext(quoted, nil)
+	if title != "" || body != "" || len(thumb) > 0 {
+		if ci == nil {
+			ci = &waE2E.ContextInfo{}
+		}
+		ci.ExternalAdReply = &waE2E.ContextInfo_ExternalAdReplyInfo{
+			Title:                 proto.String(title),
+			Body:                  proto.String(body),
+			MediaType:             waE2E.ContextInfo_ExternalAdReplyInfo_IMAGE.Enum(),
+			Thumbnail:             thumb,
+			ThumbnailURL:          proto.String(thumbURL),
+			SourceURL:             proto.String(sourceURL),
+			RenderLargerThumbnail: proto.Bool(true),
+		}
 	}
 	_, err = c.wa.SendMessage(context.Background(), to, &waE2E.Message{
 		AudioMessage: &waE2E.AudioMessage{
@@ -321,7 +340,7 @@ func (c *Client) SendAudio(to types.JID, data []byte, ptt bool, quoted *events.M
 			FileEncSHA256: up.FileEncSHA256,
 			FileSHA256:    up.FileSHA256,
 			FileLength:    proto.Uint64(uint64(len(data))),
-			ContextInfo:   c.quotedContext(quoted, nil),
+			ContextInfo:   ci,
 		},
 	})
 	return err

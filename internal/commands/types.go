@@ -19,6 +19,7 @@ type BotAPI interface {
 	SendImage(to types.JID, data []byte, caption string, quoted *events.Message, mentions ...string) error
 	SendVideo(to types.JID, data []byte, caption string, gifPlayback bool, quoted *events.Message, mentions ...string) error
 	SendAudio(to types.JID, data []byte, ptt bool, quoted *events.Message) error
+	SendAudioWithCard(to types.JID, data []byte, ptt bool, title, body, sourceURL, thumbURL string, thumb []byte, quoted *events.Message) error
 	SendSticker(to types.JID, webpData []byte, quoted *events.Message) error
 	SendStickerWithAudio(to types.JID, webpData, audioData []byte, isAnimated bool, quoted *events.Message) error
 	SendDocument(to types.JID, data []byte, filename, mimetype, caption string, quoted *events.Message) error
@@ -82,6 +83,10 @@ func (c *Context) SendStickerWithAudio(webp, audio []byte, isAnimated bool) erro
 
 func (c *Context) SendAudio(data []byte, ptt bool) error {
 	return c.Bot.SendAudio(c.From, data, ptt, c.Event)
+}
+
+func (c *Context) SendAudioWithCard(data []byte, ptt bool, title, body, sourceURL, thumbURL string, thumb []byte) error {
+	return c.Bot.SendAudioWithCard(c.From, data, ptt, title, body, sourceURL, thumbURL, thumb, c.Event)
 }
 
 type Command struct {
