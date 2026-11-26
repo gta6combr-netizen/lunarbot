@@ -25,6 +25,7 @@ type BotAPI interface {
 	GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error)
 	InvalidateGroupCache(jid types.JID)
 	ResolvePN(jid types.JID) types.JID
+	SynthesizeVoice(text string) ([]byte, error)
 	Restart()
 }
 

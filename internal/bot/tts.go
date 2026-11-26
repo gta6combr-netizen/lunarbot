@@ -38,7 +38,7 @@ func SynthesizeVoice(rootDir, apiKey, text string) ([]byte, error) {
 	if apiKey != "" {
 		voice := os.Getenv("GEMINI_VOICE")
 		if voice == "" {
-			voice = "Kore"
+			voice = "Zephyr"
 		}
 		if ogg, err := synthesizeGeminiTTS(rootDir, apiKey, voice, text); err == nil && len(ogg) > 0 {
 			return ogg, nil
