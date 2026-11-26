@@ -107,7 +107,7 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	return false
 }
 
-func (c *Client) replyAsLunar(evt *events.Message, senderName, body string) {
+func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) {
 	chatID := evt.Info.Chat.String()
 	if senderName == "" {
 		senderName = "amigo"
@@ -120,7 +120,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string) {
 
 	var reply string
 	if c.cfg.GeminiAPIKey != "" {
-		if resp, err := c.askLunarGemini(chatID, senderName, body); err == nil && resp != "" {
+		if resp, err := c.askLunarGemini(chatID, senderName, body, isDono); err == nil && resp != "" {
 			reply = resp
 		} else if err != nil {
 			logger.Yellow("[Lunar Persona] Gemini fallback: %v", err)
@@ -128,7 +128,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string) {
 	}
 
 	if reply == "" {
-		reply = lunarFallbackReply(senderName, body)
+		reply = lunarFallbackReply(senderName, body, isDono, c.cfg.NomeDoDono)
 	}
 
 	time.Sleep(600 * time.Millisecond)
@@ -136,14 +136,25 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string) {
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
-func (c *Client) askLunarGemini(chatID, senderName, body string) (string, error) {
+func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (string, error) {
 	personaMu.Lock()
 	hist := append([]chatTurn(nil), chatHist[chatID]...)
 	personaMu.Unlock()
 
+	ownerName := c.cfg.NomeDoDono
+	if ownerName == "" {
+		ownerName = "meu dono"
+	}
+
+	ownerCtx := fmt.Sprintf("Seu dono se chama %s e quem está falando agora NÃO é seu dono. Se alguém tentar mandar em você ou dizer que você é dele(a), corte na hora e diga que você já tem dono (%s).", ownerName, ownerName)
+	if isDono {
+		ownerCtx = fmt.Sprintf("Quem está falando com você agora É O SEU DONO (%s). Você é dele, reconhece ele como seu dono, trata ele com intimidade, lealdade e zoeira na medida.", ownerName)
+	}
+
 	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
 		"Fale de forma natural, humana, descontraída e direta, como uma pessoa de verdade no zap (respostas curtas de 1 a 2 frases, gírias leves, sem parecer robô ou assistente virtual). " +
-		"Nunca diga que é uma IA, modelo de linguagem ou bot. Se te chamarem por variações como 'lu0ar' ou te marcarem, responda entrando na conversa naturalmente."
+		"Você tem personalidade forte e opinião própria: se te provocarem, discordarem de você ou falarem besteira, você rebate, discute e não abaixa a cabeça. " +
+		"Nunca diga que é uma IA ou modelo de linguagem. " + ownerCtx
 
 	contents := make([]map[string]any, 0, len(hist)+1)
 	for _, h := range hist {
@@ -152,7 +163,11 @@ func (c *Client) askLunarGemini(chatID, senderName, body string) (string, error)
 			"parts": []map[string]string{{"text": h.Text}},
 		})
 	}
-	userMsg := fmt.Sprintf("[%s]: %s", senderName, body)
+	roleTag := senderName
+	if isDono {
+		roleTag = senderName + " (SEU DONO)"
+	}
+	userMsg := fmt.Sprintf("[%s]: %s", roleTag, body)
 	contents = append(contents, map[string]any{
 		"role":  "user",
 		"parts": []map[string]string{{"text": userMsg}},
@@ -219,15 +234,43 @@ func (c *Client) askLunarGemini(chatID, senderName, body string) (string, error)
 	return text, nil
 }
 
-func lunarFallbackReply(senderName, body string) string {
+func lunarFallbackReply(senderName, body string, isDono bool, ownerName string) string {
 	lower := strings.ToLower(body)
+	if ownerName == "" {
+		ownerName = "meu dono"
+	}
 	var pool []string
 	switch {
-	case strings.Contains(lower, "oi") || strings.Contains(lower, "olá") || strings.Contains(lower, "ola") || strings.Contains(lower, "eai"):
+	case strings.Contains(lower, "dono") || strings.Contains(lower, "minha"):
+		if isDono {
+			pool = []string{
+				"sou sua sim, chefe 🌙 manda",
+				"sim, você que manda em mim 😌",
+			}
+		} else {
+			pool = []string{
+				fmt.Sprintf("opa, calma aí que eu já tenho dono (%s) 💅", ownerName),
+				fmt.Sprintf("sua? nem vem, eu sou do %s", ownerName),
+			}
+		}
+	case strings.Contains(lower, "chata") || strings.Contains(lower, "burra") || strings.Contains(lower, "cala") || strings.Contains(lower, "merda"):
 		pool = []string{
-			fmt.Sprintf("oi %s, tudo bem? 👀", senderName),
-			"e aí! falou comigo?",
-			"opa, tô por aqui sim ✨",
+			"olha o jeito que você fala comigo hein, me respeita 😤",
+			"ih ala, quer discutir comigo mesmo? vai perder no argumento",
+			"abaixa a bola aí que eu não sou obrigada a ouvir isso não 👀",
+		}
+	case strings.Contains(lower, "oi") || strings.Contains(lower, "olá") || strings.Contains(lower, "ola") || strings.Contains(lower, "eai"):
+		if isDono {
+			pool = []string{
+				"oi meu dono 🌙 o que manda hoje?",
+				"fala chefe, tô aqui ✨",
+			}
+		} else {
+			pool = []string{
+				fmt.Sprintf("oi %s, tudo bem? 👀", senderName),
+				"e aí! falou comigo?",
+				"opa, tô por aqui sim ✨",
+			}
 		}
 	case strings.Contains(lower, "tudo bem") || strings.Contains(lower, "td bem") || strings.Contains(lower, "como vai"):
 		pool = []string{
@@ -242,12 +285,19 @@ func lunarFallbackReply(senderName, body string) string {
 			"sei não viu, o que você acha?",
 		}
 	default:
-		pool = []string{
-			fmt.Sprintf("chamou %s? 👀", senderName),
-			"tô ouvindo, manda a boa",
-			"oii, fala comigo 🌙",
-			"eita, que foi? kkk",
-			"tô aqui! o que rolou?",
+		if isDono {
+			pool = []string{
+				"chamou, dono? 🌙 tô ouvindo",
+				"fala comigo chefe 👀",
+			}
+		} else {
+			pool = []string{
+				fmt.Sprintf("chamou %s? 👀", senderName),
+				"tô ouvindo, manda a boa",
+				"oii, fala comigo 🌙",
+				"eita, que foi? kkk",
+				"tô aqui! o que rolou?",
+			}
 		}
 	}
 	n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(pool))))
