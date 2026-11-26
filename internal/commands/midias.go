@@ -293,9 +293,10 @@ func registerMidias(r *Registry) {
 					vf = crop + "," + vf
 				}
 				webp, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
-					"-t", "7",
+					"-t", "30",
+					"-r", "10",
 					"-vf", vf,
-					"-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0",
+					"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "50", "-loop", "0", "-an", "-vsync", "0",
 				})
 				if err != nil {
 					return ctx.Reply("❌ Erro ao gerar figurinha: " + err.Error())
