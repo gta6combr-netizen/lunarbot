@@ -295,20 +295,28 @@ func registerMidias(r *Registry) {
 				if crop := detectCrop(ctx, data, "mp4"); crop != "" {
 					vf = crop + "," + vf
 				}
-				// WhatsApp freezes animated WebP stickers over ~500KB or >10s; use fps=12 inside -vf so speed stays 1:1
+				// Tenta até 20s mantendo <=480KB para o WhatsApp não congelar a animação
+				vf20 := "fps=10,scale=320:320,setsar=1"
+				if crop := detectCrop(ctx, data, "mp4"); crop != "" {
+					vf20 = crop + "," + vf20
+				}
 				webp, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
-					"-t", "8",
-					"-vf", "fps=12," + vf,
-					"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "1", "-q:v", "55", "-loop", "0", "-an",
+					"-t", "20",
+					"-vf", vf20,
+					"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "2", "-q:v", "40", "-loop", "0", "-an",
 				})
 				if err != nil {
 					return ctx.Reply("❌ Erro ao gerar figurinha: " + err.Error())
 				}
 				if len(webp) > 480*1024 {
+					vfSmall := "fps=8,scale=256:256,setsar=1"
+					if crop := detectCrop(ctx, data, "mp4"); crop != "" {
+						vfSmall = crop + "," + vfSmall
+					}
 					if smaller, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
-						"-t", "6",
-						"-vf", "fps=10,scale=320:320,setsar=1",
-						"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "2", "-q:v", "40", "-loop", "0", "-an",
+						"-t", "20",
+						"-vf", vfSmall,
+						"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "3", "-q:v", "30", "-loop", "0", "-an",
 					}); err == nil && len(smaller) > 0 {
 						webp = smaller
 					}
