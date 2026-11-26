@@ -75,7 +75,7 @@ func registerMidias(r *Registry) {
 			}
 			ctx.React("✨")
 			ext := "jpg"
-			ffArgs := []string{"-vf", "format=rgba,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0"}
+			ffArgs := []string{"-vf", "scale=512:512,setsar=1", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0"}
 			if kind == "video" {
 				ext = "mp4"
 				ffArgs = append([]string{"-t", "7"}, ffArgs...)
@@ -264,7 +264,7 @@ func registerMidias(r *Registry) {
 			if kind == "video" {
 				webp, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
 					"-t", "7",
-					"-vf", "format=rgba,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000",
+					"-vf", "scale=512:512,setsar=1",
 					"-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0",
 				})
 				if err != nil {
