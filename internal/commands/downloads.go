@@ -220,21 +220,30 @@ func registerDownloads(r *Registry) {
 				thumb, _ := httpGetBytes(meta.ThumbURL)
 				ytURL := "https://youtu.be/" + vid
 
+				var capSB strings.Builder
+				capSB.WriteString(fmt.Sprintf("🎵 *%s*\n", meta.Title))
+				if meta.Author != "" {
+					capSB.WriteString(fmt.Sprintf("👤 *Canal:* %s\n", meta.Author))
+				}
+				if meta.Duration != "" {
+					capSB.WriteString(fmt.Sprintf("⏱️ *Duração:* %s\n", meta.Duration))
+				}
+				capSB.WriteString(fmt.Sprintf("🔗 %s\n", ytURL))
+				if meta.Description != "" {
+					capSB.WriteString(fmt.Sprintf("\n📝 *Descrição:*\n%s\n", meta.Description))
+				}
+
+				if len(thumb) > 0 {
+					_ = ctx.SendImage(thumb, capSB.String())
+				} else {
+					_ = ctx.Reply(capSB.String())
+				}
+
 				if ctx.Config.RapidAPIKey != "" {
 					_ = ctx.Reply("⬇️ *Etapa 2/3:* Baixando faixa de áudio...")
 					data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid)
 					if err == nil {
-						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3 com capa e descrição...")
-						cardBody := meta.Author
-						if meta.Duration != "" {
-							cardBody += " • " + meta.Duration
-						}
-						if meta.Description != "" {
-							cardBody += "\n" + meta.Description
-						}
-						if err := ctx.SendAudioWithCard(data, false, meta.Title, cardBody, ytURL, meta.ThumbURL, thumb); err == nil {
-							return nil
-						}
+						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3...")
 						return ctx.SendAudio(data, false)
 					}
 					_ = ctx.Reply(fmt.Sprintf("⚠️ RapidAPI falhou (%v), tentando yt-dlp...", err))
@@ -247,7 +256,7 @@ func registerDownloads(r *Registry) {
 				query = "ytsearch1:" + query
 			}
 			outTmpl := filepath.Join(ctx.Config.RootDir, "temp", fmt.Sprintf("play_%d.%%(ext)s", time.Now().UnixNano()))
-			cmd := exec.Command(findYtDlp(), "-x", "--audio-format", "mp3", "--max-filesize", "25M", "-o", outTmpl, query)
+			cmd := exec.Command(findYtDlp(), "--extractor-args", "youtube:player_client=android", "-x", "--audio-format", "mp3", "--max-filesize", "25M", "-o", outTmpl, query)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return ctx.Reply("❌ Erro ao baixar: " + string(out))
 			}
