@@ -69,29 +69,94 @@ func registerUtilidades(r *Registry) {
 		Name: "menu", Aliases: []string{"ajuda", "help", "commands", "comandos"}, Category: "utilidades",
 		Description: "Exibe o menu de comandos do bot",
 		Execute: func(ctx *Context) error {
-			ctx.React("🌸")
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("🩸 *%s* (Go Edition)\n", ctx.Config.NomeDoBot))
-			sb.WriteString(fmt.Sprintf("👤 Olá, *%s*!\n", ctx.PushName))
-			sb.WriteString(fmt.Sprintf("🔑 Prefixo: *%s* | Comandos: *%d*\n", ctx.Prefix, len(ctx.Registry.AllUnique())))
-			sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n")
+			ctx.React("🌙")
+			u := ctx.DB.GetUser(ctx.Sender.String())
 
-			cats := ctx.Registry.Categories()
-			filter := strings.ToLower(ctx.Q)
-			for _, cat := range cats {
-				if filter != "" && !strings.Contains(strings.ToLower(cat), filter) {
-					continue
-				}
-				cmds := ctx.Registry.ListByCategory(cat)
-				sb.WriteString(fmt.Sprintf("\n📂 *%s* (%d)\n", strings.ToUpper(cat), len(cmds)))
-				var names []string
-				for _, c := range cmds {
-					names = append(names, ctx.Prefix+c.Name)
-				}
-				sb.WriteString(strings.Join(names, " • ") + "\n")
+			catOrder := []string{
+				"midias", "resenha", "jogos", "downloads",
+				"utilidades", "admin", "cmds-aleatorios",
+				"financas", "trabalho", "estudo", "saude",
+				"infos", "adulto", "dono",
 			}
-			sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
-			sb.WriteString(fmt.Sprintf("💡 Use *%smenu <categoria>* para filtrar.", ctx.Prefix))
+			catMeta := map[string]struct {
+				icon  string
+				label string
+			}{
+				"midias":          {"🎨", "MÍDIAS & FIGURINHAS"},
+				"resenha":         {"🎭", "RESENHA & BRINCADEIRAS"},
+				"jogos":           {"🎮", "JOGOS"},
+				"downloads":       {"📥", "DOWNLOADS"},
+				"utilidades":      {"🛠️", "UTILIDADES"},
+				"admin":           {"🛡️", "ADMINISTRAÇÃO"},
+				"cmds-aleatorios": {"🎲", "ALEATÓRIOS & ANIME"},
+				"financas":        {"💰", "FINANÇAS"},
+				"trabalho":        {"💼", "TRABALHO"},
+				"estudo":          {"📚", "ESTUDO"},
+				"saude":           {"🏥", "SAÚDE"},
+				"infos":           {"ℹ️", "INFORMAÇÕES"},
+				"adulto":          {"🔞", "ADULTO (+18)"},
+				"dono":            {"👑", "DONO"},
+			}
+
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("╭───「 🌙 *%s* 」\n", strings.ToUpper(ctx.Config.NomeDoBot)))
+			sb.WriteString(fmt.Sprintf("│ 👤 *Usuário:* %s\n", ctx.PushName))
+			sb.WriteString(fmt.Sprintf("│ ⭐ *Nível:* %d | *%s:* %d %s\n", u.Level, ctx.Config.Moeda.Nome, u.Coins, ctx.Config.Moeda.Simbolo))
+			sb.WriteString(fmt.Sprintf("│ 🔑 *Prefixo:* %s | *Comandos:* %d\n", ctx.Prefix, len(ctx.Registry.AllUnique())))
+			sb.WriteString("╰────────────────────────\n")
+
+			filter := strings.ToLower(strings.TrimSpace(ctx.Q))
+			if filter != "" {
+				matched := false
+				for _, cat := range catOrder {
+					meta := catMeta[cat]
+					if !strings.Contains(strings.ToLower(cat), filter) && !strings.Contains(strings.ToLower(meta.label), filter) {
+						continue
+					}
+					cmds := ctx.Registry.ListByCategory(cat)
+					if len(cmds) == 0 {
+						continue
+					}
+					matched = true
+					sb.WriteString(fmt.Sprintf("\n╭───「 %s *%s* (%d) 」\n", meta.icon, meta.label, len(cmds)))
+					for _, c := range cmds {
+						if c.Description != "" {
+							sb.WriteString(fmt.Sprintf("│ ▸ *%s%s* — %s\n", ctx.Prefix, c.Name, c.Description))
+						} else {
+							sb.WriteString(fmt.Sprintf("│ ▸ *%s%s*\n", ctx.Prefix, c.Name))
+						}
+					}
+					sb.WriteString("╰────────────────────────\n")
+				}
+				if !matched {
+					sb.WriteString(fmt.Sprintf("\n❌ Categoria *%s* não encontrada.\n", ctx.Q))
+				}
+			} else {
+				for _, cat := range catOrder {
+					if cat == "dono" && !ctx.IsDono {
+						continue
+					}
+					cmds := ctx.Registry.ListByCategory(cat)
+					if len(cmds) == 0 {
+						continue
+					}
+					meta := catMeta[cat]
+					sb.WriteString(fmt.Sprintf("\n╭───「 %s *%s* (%d) 」\n", meta.icon, meta.label, len(cmds)))
+					for i := 0; i < len(cmds); i += 3 {
+						end := i + 3
+						if end > len(cmds) {
+							end = len(cmds)
+						}
+						var row []string
+						for _, c := range cmds[i:end] {
+							row = append(row, ctx.Prefix+c.Name)
+						}
+						sb.WriteString("│ ▸ " + strings.Join(row, "  •  ") + "\n")
+					}
+					sb.WriteString("╰────────────────────────\n")
+				}
+				sb.WriteString(fmt.Sprintf("\n💡 *Dica:* use *%smenu <categoria>* para ver detalhes (ex: *%smenu midias*).", ctx.Prefix, ctx.Prefix))
+			}
 
 			mp4Path := filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.mp4")
 			if data, err := os.ReadFile(mp4Path); err == nil {
