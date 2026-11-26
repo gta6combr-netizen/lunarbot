@@ -31,6 +31,7 @@ type Config struct {
 	CooldownPadrao     int          `json:"cooldownPadrao"`
 	TempCleanupMinutes int          `json:"tempCleanupMinutes"`
 	GeminiAPIKey       string       `json:"geminiApiKey"`
+	RapidAPIKey        string       `json:"rapidApiKey"`
 	Moeda              MoedaConfig  `json:"moeda"`
 	Niveis             NiveisConfig `json:"niveis"`
 	RootDir            string       `json:"-"`
@@ -80,6 +81,9 @@ func Load(rootDir string) (*Config, error) {
 		cfg.GeminiAPIKey = v
 	} else if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.GeminiAPIKey = v
+	}
+	if v := os.Getenv("RAPIDAPI_KEY"); v != "" {
+		cfg.RapidAPIKey = v
 	}
 
 	if cfg.Prefix == "" {

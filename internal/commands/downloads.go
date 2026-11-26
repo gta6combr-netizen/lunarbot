@@ -1,13 +1,80 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var (
+	ytURLIDRE    = regexp.MustCompile(`(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})`)
+	ytSearchIDRE = regexp.MustCompile(`"videoId":"([a-zA-Z0-9_-]{11})"`)
+)
+
+func extractOrSearchYouTubeID(query string) (string, error) {
+	if m := ytURLIDRE.FindStringSubmatch(query); len(m) == 2 {
+		return m[1], nil
+	}
+	u := "https://www.youtube.com/results?search_query=" + url.QueryEscape(query)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return "", err
+	}
+	if m := ytSearchIDRE.FindSubmatch(body); len(m) == 2 {
+		return string(m[1]), nil
+	}
+	return "", fmt.Errorf("vídeo não encontrado")
+}
+
+func downloadRapidAPIMP3(apiKey, videoID string) ([]byte, error) {
+	const host = "youtube-mp3-audio-video-downloader.p.rapidapi.com"
+	endpoint := fmt.Sprintf("https://%s/download-mp3/%s", host, url.PathEscape(videoID))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-RapidAPI-Key", apiKey)
+	req.Header.Set("X-RapidAPI-Host", host)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+
+	cl := &http.Client{Timeout: 60 * time.Second}
+	resp, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("rapidapi HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 30<<20))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 1024 {
+		return nil, fmt.Errorf("arquivo de áudio inválido")
+	}
+	return data, nil
+}
 
 func findYtDlp() string {
 	if p, err := exec.LookPath("yt-dlp"); err == nil {
@@ -31,6 +98,14 @@ func registerDownloads(r *Registry) {
 			}
 			ctx.React("🎵")
 			_ = ctx.Reply("⏳ Baixando áudio...")
+
+			if ctx.Config.RapidAPIKey != "" {
+				if vid, err := extractOrSearchYouTubeID(ctx.Q); err == nil && vid != "" {
+					if data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid); err == nil {
+						return ctx.SendAudio(data, false)
+					}
+				}
+			}
 
 			query := ctx.Q
 			if !strings.HasPrefix(query, "http") {

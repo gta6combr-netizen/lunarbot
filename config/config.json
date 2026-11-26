@@ -18,5 +18,6 @@
     "xpBase": 100,
     "multiplicador": 1.35
   },
-  "tempCleanupMinutes": 30
+  "tempCleanupMinutes": 30,
+  "rapidApiKey": "e872ec5140msha6d4576f1e92e8dp19187cjsn2ccb39b777e3"
 }
