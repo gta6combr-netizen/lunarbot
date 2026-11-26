@@ -209,7 +209,13 @@ func (c *Client) handleMessage(evt *events.Message) {
 			groupName = gi.Name
 			for _, p := range gi.Participants {
 				pPN := c.ResolvePN(p.JID)
-				if p.JID.ToNonAD() == sender || pPN == permSender {
+				if !p.PhoneNumber.IsEmpty() {
+					pPN = p.PhoneNumber.ToNonAD()
+				}
+				if p.JID.ToNonAD() == sender || p.LID.ToNonAD() == sender || pPN == permSender {
+					if permSender.Server == types.HiddenUserServer && !pPN.IsEmpty() {
+						permSender = pPN
+					}
 					if p.IsSuperAdmin {
 						isSuperAdmin = true
 						isAdmin = true
@@ -222,6 +228,10 @@ func (c *Client) handleMessage(evt *events.Message) {
 						isBotAdmin = true
 					}
 				}
+			}
+			if !isDono {
+				isDono = samePhone(permSender.User, donoNum) ||
+					c.db.IsDonoExtra(permSender.String())
 			}
 		}
 	}

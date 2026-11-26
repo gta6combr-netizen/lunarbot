@@ -238,6 +238,9 @@ func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
 						}
 					}
 				}
+				if len(u.StickerMessage.PngThumbnail) > 0 {
+					return u.StickerMessage.PngThumbnail, "image/png"
+				}
 				return webp, "image/webp"
 			}
 		}
