@@ -331,8 +331,9 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, im
 	}
 
 	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
-		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
+		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
+		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
 		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
 
 	contents := make([]map[string]any, 0, len(hist)+1)
@@ -369,8 +370,11 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, im
 		},
 		"contents": contents,
 		"generationConfig": map[string]any{
-			"temperature":     0.9,
-			"maxOutputTokens": 350,
+			"temperature":     0.85,
+			"maxOutputTokens": 1024,
+			"thinkingConfig": map[string]any{
+				"thinkingBudget": 0,
+			},
 		},
 	}
 
