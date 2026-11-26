@@ -380,7 +380,7 @@ func registerUtilidades(r *Registry) {
 			if key == "" {
 				return ctx.Reply("⚠️ `GEMINI_API_KEY` não configurada.")
 			}
-			endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + url.QueryEscape(key)
+			endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=" + url.QueryEscape(key)
 			payload := map[string]any{
 				"contents": []map[string]any{
 					{"parts": []map[string]string{{"text": ctx.Q}}},

@@ -35,9 +35,15 @@ type chatTurn struct {
 }
 
 var (
-	personaMu  sync.Mutex
-	chatHist   = make(map[string][]chatTurn)
-	personaHTTP = &http.Client{Timeout: 15 * time.Second}
+	personaMu   sync.Mutex
+	chatHist    = make(map[string][]chatTurn)
+	personaHTTP = &http.Client{Timeout: 25 * time.Second}
+	lunarModels = []string{
+		"gemini-3-flash-preview",
+		"gemini-3.8-flash",
+		"gemini-3.1-flash-lite-preview",
+		"gemini-flash-latest",
+	}
 )
 
 func getMsgContextInfo(m *waE2E.Message) *waE2E.ContextInfo {
@@ -363,50 +369,66 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, im
 	if err != nil {
 		return "", err
 	}
-	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + url.QueryEscape(c.cfg.GeminiAPIKey)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := personaHTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return "", err
-	}
-
-	var parsed struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if err := json.Unmarshal(respBytes, &parsed); err != nil {
-		return "", err
-	}
-	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty gemini response")
-	}
-
-	text := strings.TrimSpace(parsed.Candidates[0].Content.Parts[0].Text)
-	if text != "" {
-		personaMu.Lock()
-		h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
-		if len(h) > 12 {
-			h = h[len(h)-12:]
+	var lastErr error
+	for _, model := range lunarModels {
+		endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, url.QueryEscape(c.cfg.GeminiAPIKey))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(raw))
+		if err != nil {
+			lastErr = err
+			continue
 		}
-		chatHist[chatID] = h
-		personaMu.Unlock()
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := personaHTTP.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("%s HTTP %d: %s", model, resp.StatusCode, string(respBytes[:min(len(respBytes), 180)]))
+			continue
+		}
+
+		var parsed struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(respBytes, &parsed); err != nil {
+			lastErr = err
+			continue
+		}
+		if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
+			lastErr = fmt.Errorf("%s empty candidates", model)
+			continue
+		}
+
+		text := strings.TrimSpace(parsed.Candidates[0].Content.Parts[0].Text)
+		if text != "" {
+			personaMu.Lock()
+			h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
+			if len(h) > 12 {
+				h = h[len(h)-12:]
+			}
+			chatHist[chatID] = h
+			personaMu.Unlock()
+			return text, nil
+		}
 	}
-	return text, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("empty gemini response")
+	}
+	return "", lastErr
 }
 
 func lunarFallbackReply(senderName, body string, isDono bool, ownerName string) string {
