@@ -300,4 +300,41 @@ func registerMidias(r *Registry) {
 			return ctx.SendAudio(mp3, true)
 		},
 	})
+
+	r.Register(&Command{
+		Name:        "fala",
+		Aliases:     []string{"tts", "audio", "voz"},
+		Category:    "midias",
+		Description: "Faz a Lunar falar um texto em áudio (PTT)",
+		Execute: func(ctx *Context) error {
+			if ctx.Q == "" {
+				return ctx.Reply("❗ Escreve o que você quer que eu fale! Ex: `.fala oi gente`")
+			}
+			id := fmt.Sprintf("%d", time.Now().UnixNano())
+			mp3Path := filepath.Join(ctx.Config.RootDir, "temp", "cmdtts_"+id+".mp3")
+			oggPath := filepath.Join(ctx.Config.RootDir, "temp", "cmdtts_"+id+".ogg")
+			defer os.Remove(mp3Path)
+			defer os.Remove(oggPath)
+
+			ttsBin := "edge-tts"
+			if _, err := exec.LookPath("edge-tts"); err != nil {
+				if home, err := os.UserHomeDir(); err == nil {
+					ttsBin = filepath.Join(home, ".local", "bin", "edge-tts")
+				}
+			}
+			c1 := exec.Command(ttsBin, "--voice", "pt-BR-FranciscaNeural", "--rate=+4%", "--text", ctx.Q, "--write-media", mp3Path)
+			if out, err := c1.CombinedOutput(); err != nil {
+				return ctx.Reply("❌ Erro no TTS: " + string(out))
+			}
+			c2 := exec.Command("ffmpeg", "-y", "-i", mp3Path, "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000", oggPath)
+			if out, err := c2.CombinedOutput(); err != nil {
+				return ctx.Reply("❌ Erro ao converter áudio: " + string(out))
+			}
+			ogg, err := os.ReadFile(oggPath)
+			if err != nil {
+				return ctx.Reply("❌ Erro ao ler áudio.")
+			}
+			return ctx.SendAudio(ogg, true)
+		},
+	})
 }

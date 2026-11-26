@@ -107,6 +107,8 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	return false
 }
 
+var audioRequestRE = regexp.MustCompile(`(?i)(manda|envia|fala|responde|faz).*(áudio|audio|voz)|(em|por|no)\s*(áudio|audio)`)
+
 func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) {
 	chatID := evt.Info.Chat.String()
 	if senderName == "" {
@@ -116,7 +118,12 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		body = "oi"
 	}
 
-	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	wantsAudio := audioRequestRE.MatchString(body)
+	if wantsAudio {
+		_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
+	} else {
+		_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	}
 
 	var reply string
 	if c.cfg.GeminiAPIKey != "" {
@@ -129,6 +136,16 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 
 	if reply == "" {
 		reply = lunarFallbackReply(senderName, body, isDono, c.cfg.NomeDoDono)
+	}
+
+	if wantsAudio {
+		if ogg, err := SynthesizeVoice(c.cfg.RootDir, reply); err == nil && len(ogg) > 0 {
+			_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
+			_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
+			return
+		} else if err != nil {
+			logger.Yellow("[Lunar TTS] erro: %v", err)
+		}
 	}
 
 	time.Sleep(600 * time.Millisecond)
