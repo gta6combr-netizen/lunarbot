@@ -37,12 +37,10 @@ type chatTurn struct {
 var (
 	personaMu   sync.Mutex
 	chatHist    = make(map[string][]chatTurn)
-	personaHTTP = &http.Client{Timeout: 25 * time.Second}
+	personaHTTP = &http.Client{Timeout: 6 * time.Second}
 	lunarModels = []string{
 		"gemini-3-flash-preview",
-		"gemini-3.8-flash",
-		"gemini-3.1-flash-lite-preview",
-		"gemini-flash-latest",
+		"gemini-3-flash-preview",
 	}
 )
 
@@ -300,7 +298,6 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		}
 	}
 
-	time.Sleep(600 * time.Millisecond)
 	_ = c.ReplyText(evt, reply)
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
