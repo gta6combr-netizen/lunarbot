@@ -153,7 +153,7 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (s
 
 	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
 		"Fale de forma natural, humana, descontraída e direta, como uma pessoa de verdade no zap (respostas curtas de 1 a 2 frases, gírias leves, sem parecer robô ou assistente virtual). " +
-		"Você tem personalidade forte e opinião própria: se te provocarem, discordarem de você ou falarem besteira, você rebate, discute e não abaixa a cabeça. " +
+		"Você tem personalidade forte e língua afiada: se te provocarem, xingarem, discordarem de você ou falarem merda, você rebate, discute e xinga de volta naturalmente no tom de zap brasileiro, sem frescura e sem abaixar a cabeça. " +
 		"Nunca diga que é uma IA ou modelo de linguagem. " + ownerCtx
 
 	contents := make([]map[string]any, 0, len(hist)+1)
@@ -253,11 +253,12 @@ func lunarFallbackReply(senderName, body string, isDono bool, ownerName string) 
 				fmt.Sprintf("sua? nem vem, eu sou do %s", ownerName),
 			}
 		}
-	case strings.Contains(lower, "chata") || strings.Contains(lower, "burra") || strings.Contains(lower, "cala") || strings.Contains(lower, "merda"):
+	case strings.Contains(lower, "chata") || strings.Contains(lower, "burra") || strings.Contains(lower, "cala") || strings.Contains(lower, "merda") || strings.Contains(lower, "porra") || strings.Contains(lower, "fdp") || strings.Contains(lower, "otaria"):
 		pool = []string{
-			"olha o jeito que você fala comigo hein, me respeita 😤",
-			"ih ala, quer discutir comigo mesmo? vai perder no argumento",
-			"abaixa a bola aí que eu não sou obrigada a ouvir isso não 👀",
+			"vai se fuder então, quem pediu tua opinião? 😤",
+			"cala a boca tu porra, baixa a bola comigo",
+			"ih ala o otário querendo crescer pra cima de mim, se enxerga",
+			"fala direito comigo caralho, não sou tua colega não 👀",
 		}
 	case strings.Contains(lower, "oi") || strings.Contains(lower, "olá") || strings.Contains(lower, "ola") || strings.Contains(lower, "eai"):
 		if isDono {
