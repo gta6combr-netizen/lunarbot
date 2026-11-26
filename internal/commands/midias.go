@@ -6,9 +6,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var cropDetectRE = regexp.MustCompile(`crop=\d+:\d+:\d+:\d+`)
+
+// detectCrop runs ffmpeg cropdetect to strip baked-in black bars (e.g. TikTok/Reels letterboxing).
+func detectCrop(ctx *Context, inData []byte, ext string) string {
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	inPath := filepath.Join(ctx.Config.RootDir, "temp", "cd_"+id+"."+ext)
+	defer os.Remove(inPath)
+	if os.WriteFile(inPath, inData, 0644) != nil {
+		return ""
+	}
+	cmd := exec.Command("ffmpeg", "-y", "-i", inPath, "-t", "1.5", "-vf", "cropdetect=24:2:0", "-f", "null", "-")
+	out, _ := cmd.CombinedOutput()
+	matches := cropDetectRE.FindAllString(string(out), -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[len(matches)-1]
+}
 
 func downloadContextMedia(ctx *Context) ([]byte, string, error) {
 	// Check own message first, then quoted
@@ -75,9 +95,15 @@ func registerMidias(r *Registry) {
 			}
 			ctx.React("✨")
 			ext := "jpg"
-			ffArgs := []string{"-vf", "scale=512:512,setsar=1", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0"}
 			if kind == "video" {
 				ext = "mp4"
+			}
+			vf := "scale=512:512,setsar=1"
+			if crop := detectCrop(ctx, data, ext); crop != "" {
+				vf = crop + "," + vf
+			}
+			ffArgs := []string{"-vf", vf, "-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0"}
+			if kind == "video" {
 				ffArgs = append([]string{"-t", "7"}, ffArgs...)
 			}
 			webp, err := runFFmpeg(ctx, data, ext, "webp", ffArgs)
@@ -262,9 +288,13 @@ func registerMidias(r *Registry) {
 			ctx.React("🔊")
 
 			if kind == "video" {
+				vf := "scale=512:512,setsar=1"
+				if crop := detectCrop(ctx, data, "mp4"); crop != "" {
+					vf = crop + "," + vf
+				}
 				webp, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
 					"-t", "7",
-					"-vf", "scale=512:512,setsar=1",
+					"-vf", vf,
 					"-vcodec", "libwebp", "-lossless", "0", "-q:v", "75", "-loop", "0", "-an", "-vsync", "0",
 				})
 				if err != nil {

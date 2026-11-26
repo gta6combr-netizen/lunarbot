@@ -64,7 +64,46 @@ func fetchYouTubeMeta(videoID string) ytMeta {
 		}
 	}
 
-	// 2. Fallback to oEmbed if title missing
+	// 2. Fallback to youtubei/v1/player (works on datacenter IPs like Render)
+	if meta.Description == "" || meta.Duration == "" {
+		ytBody := map[string]any{
+			"videoId": videoID,
+			"context": map[string]any{
+				"client": map[string]any{
+					"clientName":    "ANDROID",
+					"clientVersion": "19.09.37",
+					"hl":            "pt",
+					"gl":            "BR",
+				},
+			},
+		}
+		var pr struct {
+			VideoDetails struct {
+				Title            string `json:"title"`
+				Author           string `json:"author"`
+				LengthSeconds    string `json:"lengthSeconds"`
+				ShortDescription string `json:"shortDescription"`
+			} `json:"videoDetails"`
+		}
+		if httpPostJSON("https://www.youtube.com/youtubei/v1/player", ytBody, nil, &pr) == nil {
+			if meta.Title == "" {
+				meta.Title = pr.VideoDetails.Title
+			}
+			if meta.Author == "" {
+				meta.Author = pr.VideoDetails.Author
+			}
+			if meta.Description == "" {
+				meta.Description = pr.VideoDetails.ShortDescription
+			}
+			if meta.Duration == "" {
+				if sec, err := strconv.Atoi(pr.VideoDetails.LengthSeconds); err == nil && sec > 0 {
+					meta.Duration = fmt.Sprintf("%d:%02d", sec/60, sec%60)
+				}
+			}
+		}
+	}
+
+	// 3. Fallback to oEmbed if title missing
 	if meta.Title == "" {
 		var oe struct {
 			Title      string `json:"title"`
@@ -132,7 +171,7 @@ func downloadRapidAPIMP3(apiKey, videoID string) ([]byte, error) {
 	req.Header.Set("X-RapidAPI-Host", host)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
 
-	cl := &http.Client{Timeout: 60 * time.Second}
+	cl := &http.Client{Timeout: 90 * time.Second}
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil, err
@@ -202,10 +241,12 @@ func registerDownloads(r *Registry) {
 
 				if ctx.Config.RapidAPIKey != "" {
 					_ = ctx.Reply("⬇️ *Etapa 2/3:* Baixando faixa de áudio...")
-					if data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid); err == nil {
+					data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid)
+					if err == nil {
 						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3...")
 						return ctx.SendAudio(data, false)
 					}
+					_ = ctx.Reply(fmt.Sprintf("⚠️ RapidAPI falhou (%v), tentando yt-dlp...", err))
 				}
 			}
 
