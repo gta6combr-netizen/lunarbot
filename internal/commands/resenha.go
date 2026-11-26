@@ -23,15 +23,40 @@ type meterSpec struct {
 	Label   string
 }
 
+func fetchReactionGIF(ep string) []byte {
+	if ep == "" {
+		return nil
+	}
+	var wp struct {
+		URL string `json:"url"`
+	}
+	if err := httpGetJSON("https://api.waifu.pics/sfw/"+ep, &wp); err == nil && wp.URL != "" {
+		if b, err := httpGetBytes(wp.URL); err == nil && len(b) > 0 {
+			return b
+		}
+	}
+	var nb struct {
+		Results []struct {
+			URL string `json:"url"`
+		} `json:"results"`
+	}
+	if err := httpGetJSON("https://nekos.best/api/v2/"+ep, &nb); err == nil && len(nb.Results) > 0 && nb.Results[0].URL != "" {
+		if b, err := httpGetBytes(nb.Results[0].URL); err == nil && len(b) > 0 {
+			return b
+		}
+	}
+	return nil
+}
+
 func registerResenha(r *Registry) {
 	reactions := []gifReactionSpec{
-		{Name: "beijo", Aliases: []string{"kiss", "beijar"}, Emoji: "💋", Verb: "beijou", GifFile: "beijo.gif", WaifuEP: "kiss"},
-		{Name: "abraco", Aliases: []string{"abracar", "abracarforte", "hug"}, Emoji: "🤗", Verb: "abraçou", GifFile: "abracar.gif", WaifuEP: "hug"},
+		{Name: "beijo", Aliases: []string{"kiss", "beijar", "beijinho"}, Emoji: "💋", Verb: "beijou", GifFile: "beijo.gif", WaifuEP: "kiss"},
+		{Name: "abraco", Aliases: []string{"abracar", "abraço", "abraçar", "abracarforte", "hug"}, Emoji: "🤗", Verb: "abraçou", GifFile: "abracar.gif", WaifuEP: "hug"},
 		{Name: "tapa", Aliases: []string{"slap", "tapear"}, Emoji: "👋", Verb: "deu um tapa em", GifFile: "tapa.gif", WaifuEP: "slap"},
 		{Name: "soco", Aliases: []string{"socar", "punch"}, Emoji: "👊", Verb: "deu um soco em", GifFile: "soco.gif", WaifuEP: "kick"},
 		{Name: "chute", Aliases: []string{"chutar", "kick_fun"}, Emoji: "🦵", Verb: "chutou", GifFile: "chute.gif", WaifuEP: "kick"},
 		{Name: "mordida", Aliases: []string{"morder", "bite"}, Emoji: "😈", Verb: "mordeu", GifFile: "mordida.gif", WaifuEP: "bite"},
-		{Name: "carinho", Aliases: []string{"acariciar", "pat", "cafune"}, Emoji: "🥰", Verb: "fez carinho em", GifFile: "carinho.gif", WaifuEP: "pat"},
+		{Name: "carinho", Aliases: []string{"acariciar", "pat", "cafune", "cafuné"}, Emoji: "🥰", Verb: "fez carinho em", GifFile: "carinho.gif", WaifuEP: "pat"},
 		{Name: "lambida", Aliases: []string{"lamber", "lick"}, Emoji: "👅", Verb: "lambeu", GifFile: "lambida.gif", WaifuEP: "lick"},
 		{Name: "apertao", Aliases: []string{"apertar", "cuddle"}, Emoji: "🫂", Verb: "apertou", GifFile: "apertao.gif", WaifuEP: "cuddle"},
 		{Name: "cafunecabeca", Aliases: []string{"headpat"}, Emoji: "💆", Verb: "fez cafuné em", GifFile: "carinho_cabeca.gif", WaifuEP: "pat"},
@@ -55,13 +80,16 @@ func registerResenha(r *Registry) {
 				ctx.React(spec.Emoji)
 				caption := fmt.Sprintf("%s %s *%s* %s!", spec.Emoji, mentionTag(ctx.Sender), spec.Verb, mentionTag(target))
 
-				// Try local GIF -> MP4 via ffmpeg
-				if spec.GifFile != "" {
+				// 1. Tenta API de GIFs (waifu.pics / nekos.best)
+				gifBytes := fetchReactionGIF(spec.WaifuEP)
+				// 2. Fallback para GIF local se offline ou falhar
+				if len(gifBytes) == 0 && spec.GifFile != "" {
 					gifPath := filepath.Join(ctx.Config.RootDir, "assets", "gifs", spec.GifFile)
-					if gifBytes, err := os.ReadFile(gifPath); err == nil {
-						if mp4, err := runFFmpeg(ctx, gifBytes, "gif", "mp4", []string{"-movflags", "faststart", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"}); err == nil {
-							return ctx.SendVideo(mp4, caption, true, ctx.Sender.String(), target.String())
-						}
+					gifBytes, _ = os.ReadFile(gifPath)
+				}
+				if len(gifBytes) > 0 {
+					if mp4, err := runFFmpeg(ctx, gifBytes, "gif", "mp4", []string{"-movflags", "faststart", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"}); err == nil {
+						return ctx.SendVideo(mp4, caption, true, ctx.Sender.String(), target.String())
 					}
 				}
 				return ctx.Bot.SendText(ctx.From, caption, ctx.Sender.String(), target.String())
