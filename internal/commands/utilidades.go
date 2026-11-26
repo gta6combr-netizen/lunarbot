@@ -892,6 +892,129 @@ func registerUtilidades(r *Registry) {
 		}
 		return ctx.Reply(fmt.Sprintf("🎂 Idade aproximada: *%d anos*", time.Now().Year()-y))
 	}})
+
+	r.Register(&Command{
+		Name: "wiki", Aliases: []string{"wikipedia"}, Category: "utilidades", Description: "Pesquisa resumo na Wikipedia PT-BR",
+		Execute: func(ctx *Context) error {
+			if ctx.Q == "" {
+				return ctx.Reply("❗ Informe o termo. Ex: `.wiki Lua`")
+			}
+			var res struct {
+				Title   string `json:"title"`
+				Extract string `json:"extract"`
+			}
+			u := "https://pt.wikipedia.org/api/rest_v1/page/summary/" + url.PathEscape(strings.ReplaceAll(ctx.Q, " ", "_"))
+			if err := httpGetJSON(u, &res); err != nil || res.Extract == "" {
+				return ctx.Reply("❌ Nada encontrado na Wikipedia.")
+			}
+			return ctx.Reply(fmt.Sprintf("📚 *%s*\n\n%s", res.Title, res.Extract))
+		},
+	})
+
+	r.Register(&Command{
+		Name: "pokemon", Aliases: []string{"pokedex"}, Category: "utilidades", Description: "Consulta um Pokémon na PokéAPI",
+		Execute: func(ctx *Context) error {
+			if ctx.Q == "" {
+				return ctx.Reply("❗ Informe o nome ou número. Ex: `.pokemon pikachu`")
+			}
+			var res struct {
+				Name   string `json:"name"`
+				ID     int    `json:"id"`
+				Height int    `json:"height"`
+				Weight int    `json:"weight"`
+				Types  []struct {
+					Type struct {
+						Name string `json:"name"`
+					} `json:"type"`
+				} `json:"types"`
+				Sprites struct {
+					FrontDefault string `json:"front_default"`
+				} `json:"sprites"`
+			}
+			if err := httpGetJSON("https://pokeapi.co/api/v2/pokemon/"+url.PathEscape(strings.ToLower(ctx.Q)), &res); err != nil || res.Name == "" {
+				return ctx.Reply("❌ Pokémon não encontrado.")
+			}
+			var types []string
+			for _, t := range res.Types {
+				types = append(types, t.Type.Name)
+			}
+			caption := fmt.Sprintf("⚡ *#%d %s*\n🏷️ Tipo: %s\n📏 Altura: %.1fm | ⚖️ Peso: %.1fkg",
+				res.ID, strings.ToUpper(res.Name), strings.Join(types, ", "), float64(res.Height)/10, float64(res.Weight)/10)
+			if res.Sprites.FrontDefault != "" {
+				if img, err := httpGetBytes(res.Sprites.FrontDefault); err == nil {
+					return ctx.SendImage(img, caption)
+				}
+			}
+			return ctx.Reply(caption)
+		},
+	})
+
+	r.Register(&Command{
+		Name: "crypto", Category: "utilidades", Description: "Cotação de criptomoeda via CoinGecko (.crypto bitcoin)",
+		Execute: func(ctx *Context) error {
+			coin := strings.ToLower(strings.TrimSpace(ctx.Q))
+			if coin == "" {
+				coin = "bitcoin"
+			}
+			var res map[string]struct {
+				BRL float64 `json:"brl"`
+				USD float64 `json:"usd"`
+			}
+			u := "https://api.coingecko.com/api/v3/simple/price?ids=" + url.QueryEscape(coin) + "&vs_currencies=brl,usd"
+			if err := httpGetJSON(u, &res); err != nil {
+				return ctx.Reply("❌ Erro na CoinGecko.")
+			}
+			c, ok := res[coin]
+			if !ok {
+				return ctx.Reply("❌ Moeda não encontrada (use o ID, ex: bitcoin, ethereum, solana).")
+			}
+			return ctx.Reply(fmt.Sprintf("🪙 *%s*\n🇧🇷 R$ %.2f\n🇺🇸 US$ %.2f", strings.ToUpper(coin), c.BRL, c.USD))
+		},
+	})
+
+	r.Register(&Command{
+		Name: "feriado", Aliases: []string{"feriados"}, Category: "utilidades", Description: "Lista feriados nacionais do Brasil (.feriado 2026)",
+		Execute: func(ctx *Context) error {
+			yr := strconv.Itoa(time.Now().Year())
+			if ctx.Q != "" {
+				yr = cleanDigits(ctx.Q)
+			}
+			var res []struct {
+				Date string `json:"date"`
+				Name string `json:"name"`
+			}
+			if err := httpGetJSON("https://brasilapi.com.br/api/feriados/v1/"+yr, &res); err != nil || len(res) == 0 {
+				return ctx.Reply("❌ Erro ao consultar feriados.")
+			}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("📅 *Feriados Nacionais (%s):*\n\n", yr))
+			for _, f := range res {
+				sb.WriteString(fmt.Sprintf("• *%s* — %s\n", f.Date, f.Name))
+			}
+			return ctx.Reply(sb.String())
+		},
+	})
+
+	r.Register(&Command{
+		Name: "cnpj", Category: "utilidades", Description: "Consulta CNPJ via BrasilAPI",
+		Execute: func(ctx *Context) error {
+			cnpj := cleanDigits(ctx.Q)
+			if len(cnpj) != 14 {
+				return ctx.Reply("❗ Informe um CNPJ válido (14 dígitos).")
+			}
+			var res struct {
+				RazaoSocial string `json:"razao_social"`
+				NomeFantasia string `json:"nome_fantasia"`
+				Situacao    string `json:"descricao_situacao_cadastral"`
+				Municipio   string `json:"municipio"`
+				UF          string `json:"uf"`
+			}
+			if err := httpGetJSON("https://brasilapi.com.br/api/cnpj/v1/"+cnpj, &res); err != nil || res.RazaoSocial == "" {
+				return ctx.Reply("❌ CNPJ não encontrado.")
+			}
+			return ctx.Reply(fmt.Sprintf("🏢 *%s*\n🏷️ Fantasia: %s\n📌 Situação: %s\n📍 %s - %s", res.RazaoSocial, res.NomeFantasia, res.Situacao, res.Municipio, res.UF))
+		},
+	})
 }
 
 func configClean(s string) string {

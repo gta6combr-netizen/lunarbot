@@ -124,6 +124,8 @@ func registerExtras(r *Registry) {
 	imgAPI("waifu", "cmds-aleatorios", "Imagem waifu anime", "https://api.waifu.pics/sfw/waifu", "url")
 	imgAPI("hugimg", "cmds-aleatorios", "Imagem de abraço anime", "https://api.waifu.pics/sfw/hug", "url")
 	imgAPI("kissimg", "cmds-aleatorios", "Imagem de beijo anime", "https://api.waifu.pics/sfw/kiss", "url")
+	imgAPI("coffee", "cmds-aleatorios", "Foto aleatória de café", "https://coffee.alexflipnote.dev/random.json", "file")
+	imgAPI("panda", "cmds-aleatorios", "Foto de panda", "https://some-random-api.com/img/panda", "link")
 
 	// Casamento (Marriage)
 	r.Register(&Command{

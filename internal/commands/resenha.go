@@ -27,21 +27,46 @@ func fetchReactionGIF(ep string) []byte {
 	if ep == "" {
 		return nil
 	}
-	var wp struct {
-		URL string `json:"url"`
-	}
-	if err := httpGetJSON("https://api.waifu.pics/sfw/"+ep, &wp); err == nil && wp.URL != "" {
-		if b, err := httpGetBytes(wp.URL); err == nil && len(b) > 0 {
-			return b
-		}
-	}
-	var nb struct {
-		Results []struct {
+	tryWaifu := func() []byte {
+		var wp struct {
 			URL string `json:"url"`
-		} `json:"results"`
+		}
+		if err := httpGetJSON("https://api.waifu.pics/sfw/"+ep, &wp); err == nil && wp.URL != "" {
+			if b, err := httpGetBytes(wp.URL); err == nil && len(b) > 0 {
+				return b
+			}
+		}
+		return nil
 	}
-	if err := httpGetJSON("https://nekos.best/api/v2/"+ep, &nb); err == nil && len(nb.Results) > 0 && nb.Results[0].URL != "" {
-		if b, err := httpGetBytes(nb.Results[0].URL); err == nil && len(b) > 0 {
+	tryNekosBest := func() []byte {
+		var nb struct {
+			Results []struct {
+				URL string `json:"url"`
+			} `json:"results"`
+		}
+		if err := httpGetJSON("https://nekos.best/api/v2/"+ep, &nb); err == nil && len(nb.Results) > 0 && nb.Results[0].URL != "" {
+			if b, err := httpGetBytes(nb.Results[0].URL); err == nil && len(b) > 0 {
+				return b
+			}
+		}
+		return nil
+	}
+	tryOtakuGifs := func() []byte {
+		var og struct {
+			URL string `json:"url"`
+		}
+		if err := httpGetJSON("https://api.otakugifs.xyz/gif?reaction="+ep, &og); err == nil && og.URL != "" {
+			if b, err := httpGetBytes(og.URL); err == nil && len(b) > 0 {
+				return b
+			}
+		}
+		return nil
+	}
+
+	providers := []func() []byte{tryWaifu, tryNekosBest, tryOtakuGifs}
+	start := randInt(0, len(providers)-1)
+	for i := 0; i < len(providers); i++ {
+		if b := providers[(start+i)%len(providers)](); len(b) > 0 {
 			return b
 		}
 	}
