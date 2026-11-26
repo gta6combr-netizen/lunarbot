@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lunar Bot - QR Code</title>
+  <meta http-equiv="refresh" content="5">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      color: #eee;
+    }
+    
+    .container {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    h1 {
+      color: #e94560;
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+    }
+    
+    .subtitle {
+      color: #aaa;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+    
+    .qr-container {
+      background: white;
+      padding: 20px;
+      border-radius: 15px;
+      display: inline-block;
+      margin: 20px 0;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .qr-container img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      font-weight: bold;
+    }
+    
+    .status.waiting {
+      background: rgba(255, 193, 7, 0.2);
+      border: 1px solid rgba(255, 193, 7, 0.5);
+      color: #ffc107;
+    }
+    
+    .status.ready {
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.5);
+      color: #4caf50;
+    }
+    
+    .status.connected {
+      background: rgba(33, 150, 243, 0.2);
+      border: 1px solid rgba(33, 150, 243, 0.5);
+      color: #2196f3;
+    }
+    
+    .instructions {
+      margin-top: 30px;
+      text-align: left;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 20px;
+      border-radius: 10px;
+      font-size: 0.95em;
+      line-height: 1.6;
+    }
+    
+    .instructions h3 {
+      color: #e94560;
+      margin-bottom: 15px;
+    }
+    
+    .instructions ol {
+      padding-left: 20px;
+    }
+    
+    .instructions li {
+      margin-bottom: 10px;
+    }
+    
+    .loading {
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 0.5; }
+      50% { opacity: 1; }
+      100% { opacity: 0.5; }
+    }
+    
+    .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top: 3px solid #e94560;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .footer {
+      margin-top: 30px;
+      color: #666;
+      font-size: 0.9em;
+    }
+    
+    .emoji {
+      font-size: 1.5em;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌙 Lunar Bot</h1>
+    <p class="subtitle">Sistema de autenticação WhatsApp</p>
+    
+    <div id="content">
+      <!-- Conteúdo será carregado via JavaScript -->
+    </div>
+    
+    <div class="footer">
+      <p>Atualização automática a cada 5 segundos</p>
+    </div>
+  </div>
+  
+  <script>
+    async function loadQRCode() {
+      try {
+        const response = await fetch('/api/qr-status');
+        const data = await response.json();
+        
+        const content = document.getElementById('content');
+        
+        if (data.status === 'connected') {
+          content.innerHTML = `
+            <div class="status connected">
+              <span class="emoji">✅</span> Bot Conectado!
+            </div>
+            <p style="margin-top: 20px; color: #4caf50;">
+              O bot está funcionando normalmente.
+            </p>
+          `;
+        } else if (data.status === 'waiting' || !data.qr) {
+          content.innerHTML = `
+            <div class="spinner"></div>
+            <div class="status waiting">
+              <span class="emoji">⏳</span> Aguardando QR Code...
+            </div>
+            <p style="margin-top: 20px;" class="loading">
+              Gerando QR Code, por favor aguarde...
+            </p>
+          `;
+        } else if (data.status === 'ready' && data.qr) {
+          content.innerHTML = `
+            <div class="status ready">
+              <span class="emoji">📱</span> Escaneie o QR Code abaixo
+            </div>
+            <div class="qr-container">
+              <img src="/api/qr-image" alt="QR Code para conectar">
+            </div>
+            <div class="instructions">
+              <h3>Como conectar:</h3>
+              <ol>
+                <li>Abra o WhatsApp no seu celular</li>
+                <li>Toque em <strong>Mais opções</strong> (Android) ou <strong>Aparelhos conectados</strong> (iPhone)</li>
+                <li>Toque em <strong>Conectar aparelho</strong></li>
+                <li>Aponte a câmera para o QR Code acima</li>
+                <li>Aguarde a conexão ser estabelecida</li>
+              </ol>
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error('Erro ao carregar QR Code:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="status waiting">
+            <span class="emoji">⚠️</span> Erro ao carregar QR Code
+          </div>
+          <p style="margin-top: 20px;">
+            Tente atualizar a página ou verifique os logs do servidor.
+          </p>
+        `;
+      }
+    }
+    
+    // Carrega imediatamente e depois a cada 5 segundos
+    loadQRCode();
+    setInterval(loadQRCode, 5000);
+  </script>
+</body>
+</html>

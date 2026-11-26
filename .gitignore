@@ -1,0 +1,11 @@
+# Binaries
+lunarbot
+nyxbot
+*.exe
+
+# Runtime data & sessions
+database/*.db
+database/*.db-shm
+database/*.db-wal
+temp/*
+!temp/.gitkeep
