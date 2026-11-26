@@ -93,6 +93,10 @@ func registerUtilidades(r *Registry) {
 			sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
 			sb.WriteString(fmt.Sprintf("💡 Use *%smenu <categoria>* para filtrar.", ctx.Prefix))
 
+			mp4Path := filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.mp4")
+			if data, err := os.ReadFile(mp4Path); err == nil {
+				return ctx.SendVideo(data, sb.String(), true)
+			}
 			bgPath := filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.jpeg")
 			if data, err := os.ReadFile(bgPath); err == nil {
 				return ctx.SendImage(data, sb.String())
