@@ -292,14 +292,25 @@ func registerMidias(r *Registry) {
 				if crop := detectCrop(ctx, data, "mp4"); crop != "" {
 					vf = crop + "," + vf
 				}
+				// WhatsApp freezes animated WebP stickers over ~500KB or >10s; keep visual loop <=8s while audio runs up to 30s
 				webp, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
-					"-t", "30",
-					"-r", "10",
+					"-t", "8",
+					"-r", "12",
 					"-vf", vf,
-					"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "50", "-loop", "0", "-an", "-vsync", "0",
+					"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "4", "-q:v", "55", "-loop", "0", "-an", "-vsync", "0",
 				})
 				if err != nil {
 					return ctx.Reply("❌ Erro ao gerar figurinha: " + err.Error())
+				}
+				if len(webp) > 480*1024 {
+					if smaller, err := runFFmpeg(ctx, data, "mp4", "webp", []string{
+						"-t", "6",
+						"-r", "10",
+						"-vf", "scale=320:320,setsar=1",
+						"-vcodec", "libwebp", "-lossless", "0", "-compression_level", "6", "-q:v", "40", "-loop", "0", "-an", "-vsync", "0",
+					}); err == nil && len(smaller) > 0 {
+						webp = smaller
+					}
 				}
 				ogg, err := runFFmpeg(ctx, data, "mp4", "ogg", []string{"-t", "30", "-vn", "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000"})
 				if err != nil {
