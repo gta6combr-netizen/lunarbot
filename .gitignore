@@ -3,8 +3,7 @@ lunarbot
 nyxbot
 *.exe
 
-# Runtime data & sessions
-database/*.db
+# Runtime WAL/temp files (session .db files are tracked)
 database/*.db-shm
 database/*.db-wal
 temp/*
