@@ -173,7 +173,7 @@ func registerDownloads(r *Registry) {
 				return ctx.Reply("❗ Informe o nome da música ou link.")
 			}
 			ctx.React("🎵")
-			_ = ctx.Reply("🔎 *Etapa 1/4:* Buscando vídeo no YouTube...")
+			_ = ctx.Reply("🔎 *Etapa 1/3:* Buscando vídeo no YouTube...")
 
 			vid, err := extractOrSearchYouTubeID(ctx.Q)
 			if err == nil && vid != "" {
@@ -181,19 +181,30 @@ func registerDownloads(r *Registry) {
 				thumb, _ := httpGetBytes(meta.ThumbURL)
 				ytURL := "https://youtu.be/" + vid
 
-				cardBody := meta.Author
-				if meta.Duration != "" {
-					cardBody += " • " + meta.Duration
+				var capSB strings.Builder
+				capSB.WriteString(fmt.Sprintf("🎵 *%s*\n", meta.Title))
+				if meta.Author != "" {
+					capSB.WriteString(fmt.Sprintf("👤 *Canal:* %s\n", meta.Author))
 				}
+				if meta.Duration != "" {
+					capSB.WriteString(fmt.Sprintf("⏱️ *Duração:* %s\n", meta.Duration))
+				}
+				capSB.WriteString(fmt.Sprintf("🔗 %s\n", ytURL))
 				if meta.Description != "" {
-					cardBody += "\n" + meta.Description
+					capSB.WriteString(fmt.Sprintf("\n📝 *Descrição:*\n%s\n", meta.Description))
+				}
+
+				if len(thumb) > 0 {
+					_ = ctx.SendImage(thumb, capSB.String())
+				} else {
+					_ = ctx.Reply(capSB.String())
 				}
 
 				if ctx.Config.RapidAPIKey != "" {
 					_ = ctx.Reply("⬇️ *Etapa 2/3:* Baixando faixa de áudio...")
 					if data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid); err == nil {
-						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3 com capa e descrição...")
-						return ctx.SendAudioWithCard(data, false, meta.Title, cardBody, ytURL, meta.ThumbURL, thumb)
+						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3...")
+						return ctx.SendAudio(data, false)
 					}
 				}
 			}
