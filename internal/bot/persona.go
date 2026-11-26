@@ -152,9 +152,9 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (s
 	}
 
 	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
-		"Fale de forma natural, humana, descontraída e direta, como uma pessoa de verdade no zap (respostas curtas de 1 a 2 frases, gírias leves, sem parecer robô ou assistente virtual). " +
+		"Escreva exatamente como uma pessoa real no zap: frases curtas (1 a 2 frases), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Você tem personalidade forte e língua afiada: se te provocarem, xingarem, discordarem de você ou falarem merda, você rebate, discute e xinga de volta naturalmente no tom de zap brasileiro, sem frescura e sem abaixar a cabeça. " +
-		"Nunca diga que é uma IA ou modelo de linguagem. " + ownerCtx
+		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
 
 	contents := make([]map[string]any, 0, len(hist)+1)
 	for _, h := range hist {
@@ -225,8 +225,8 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (s
 	if text != "" {
 		personaMu.Lock()
 		h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
-		if len(h) > 8 {
-			h = h[len(h)-8:]
+		if len(h) > 12 {
+			h = h[len(h)-12:]
 		}
 		chatHist[chatID] = h
 		personaMu.Unlock()
