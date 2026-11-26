@@ -118,53 +118,100 @@ func registerUtilidades(r *Registry) {
 						continue
 					}
 					matched = true
-					sb.WriteString(fmt.Sprintf("\n╭───「 %s *%s* (%d) 」\n", meta.icon, meta.label, len(cmds)))
+					var catSB strings.Builder
+					catSB.WriteString(fmt.Sprintf("╭🌙─━⛩─━❄━─⛩━─🌙╮\n\n    『 *%s* 』\n\n╰🌙─━⛩─━❄━─⛩━─🌙╯\n", strings.ToUpper(ctx.Config.NomeDoBot)))
+					catSB.WriteString(fmt.Sprintf("        ❱❱ %s *%s* (%d) ❰❰\n", meta.icon, meta.label, len(cmds)))
+					catSB.WriteString("╭🌙━─━─━─🌙─━─━─━─🌙╮\n│❄╭─⛩༺ʟᴜɴᴀʀ༻⛩─╮\n")
 					for _, c := range cmds {
-						if c.Description != "" {
-							sb.WriteString(fmt.Sprintf("│ ▸ *%s%s* — %s\n", ctx.Prefix, c.Name, c.Description))
-						} else {
-							sb.WriteString(fmt.Sprintf("│ ▸ *%s%s*\n", ctx.Prefix, c.Name))
-						}
+						catSB.WriteString(fmt.Sprintf("│❄│ %s%s\n", ctx.Prefix, c.Name))
 					}
-					sb.WriteString("╰────────────────────────\n")
+					catSB.WriteString("│❄╰─⛩༺ʟᴜɴᴀʀ༻⛩─╯\n╰🌙━─━─━─🌙─━─━─━─🌙╯")
+					return ctx.Reply(catSB.String())
 				}
 				if !matched {
-					sb.WriteString(fmt.Sprintf("\n❌ Categoria *%s* não encontrada.\n", ctx.Q))
+					return ctx.Reply(fmt.Sprintf("❌ Categoria *%s* não encontrada.", ctx.Q))
 				}
-			} else {
-				for _, cat := range catOrder {
-					if cat == "dono" && !ctx.IsDono {
-						continue
-					}
-					cmds := ctx.Registry.ListByCategory(cat)
-					if len(cmds) == 0 {
-						continue
-					}
-					meta := catMeta[cat]
-					sb.WriteString(fmt.Sprintf("\n╭───「 %s *%s* (%d) 」\n", meta.icon, meta.label, len(cmds)))
-					for i := 0; i < len(cmds); i += 3 {
-						end := i + 3
-						if end > len(cmds) {
-							end = len(cmds)
-						}
-						var row []string
-						for _, c := range cmds[i:end] {
-							row = append(row, ctx.Prefix+c.Name)
-						}
-						sb.WriteString("│ ▸ " + strings.Join(row, "  •  ") + "\n")
-					}
-					sb.WriteString("╰────────────────────────\n")
-				}
-				sb.WriteString(fmt.Sprintf("\n💡 *Dica:* use *%smenu <categoria>* para ver detalhes (ex: *%smenu midias*).", ctx.Prefix, ctx.Prefix))
+				return nil
 			}
 
-			mp4Path := filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.mp4")
-			if data, err := os.ReadFile(mp4Path); err == nil {
-				return ctx.SendVideo(data, sb.String(), true)
+			// Menu principal com botão interativo (lista clicável estilo Hiyuki)
+			cardBody := fmt.Sprintf(
+				"╭🌙─━⛩─━❄━─⛩━─🌙╮\n\n    『 *%s* 』\n\n╰🌙─━⛩─━❄━─⛩━─🌙╯\n"+
+					"╭🌙━─━─━─🌙─━─━─━─🌙╮\n"+
+					"│❄╭─⛩༺ʟᴜɴᴀʀ༻⛩─╮\n"+
+					"│❄│ *Bot:* %s\n"+
+					"│❄│ *User:* %s\n"+
+					"│❄│ *Nível:* %d | *%s:* %d %s\n"+
+					"│❄│ *Prefixo:* %s | *Cmds:* %d\n"+
+					"│❄╰─⛩༺ʟᴜɴᴀʀ༻⛩─╯\n"+
+					"╰🌙━─━─━─🌙─━─━─━─🌙╯",
+				strings.ToUpper(ctx.Config.NomeDoBot),
+				ctx.Config.NomeDoBot,
+				ctx.PushName,
+				u.Level, ctx.Config.Moeda.Nome, u.Coins, ctx.Config.Moeda.Simbolo,
+				ctx.Prefix, len(ctx.Registry.AllUnique()),
+			)
+
+			rows := make([]MenuListRow, 0, len(catOrder))
+			for _, cat := range catOrder {
+				if cat == "dono" && !ctx.IsDono {
+					continue
+				}
+				cmds := ctx.Registry.ListByCategory(cat)
+				if len(cmds) == 0 {
+					continue
+				}
+				meta := catMeta[cat]
+				rows = append(rows, MenuListRow{
+					Header:      "MENU " + strings.ToUpper(cat),
+					Title:       fmt.Sprintf("%s %s", meta.icon, meta.label),
+					Description: fmt.Sprintf("%d comandos disponíveis", len(cmds)),
+					ID:          fmt.Sprintf("%smenu %s", ctx.Prefix, cat),
+				})
 			}
-			bgPath := filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.jpeg")
-			if data, err := os.ReadFile(bgPath); err == nil {
-				return ctx.SendImage(data, sb.String())
+
+			bgBytes, _ := os.ReadFile(filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.jpeg"))
+			if err := ctx.Bot.SendInteractiveListMenu(
+				ctx.From,
+				bgBytes,
+				"🌙✨ _Clique no botão abaixo para abrir os menus._ ✨🌙",
+				cardBody,
+				"© "+ctx.Config.NomeDoBot,
+				"🌙 𝐌𝐄𝐍𝐔 ❆ 𝐋𝐈𝐒𝐓𝐀 🌙",
+				"Escolha uma opção",
+				rows,
+				ctx.Event,
+			); err == nil {
+				return nil
+			}
+
+			// Fallback se interactiveMessage falhar
+			for _, cat := range catOrder {
+				if cat == "dono" && !ctx.IsDono {
+					continue
+				}
+				cmds := ctx.Registry.ListByCategory(cat)
+				if len(cmds) == 0 {
+					continue
+				}
+				meta := catMeta[cat]
+				sb.WriteString(fmt.Sprintf("\n╭───「 %s *%s* (%d) 」\n", meta.icon, meta.label, len(cmds)))
+				for i := 0; i < len(cmds); i += 3 {
+					end := i + 3
+					if end > len(cmds) {
+						end = len(cmds)
+					}
+					var row []string
+					for _, c := range cmds[i:end] {
+						row = append(row, ctx.Prefix+c.Name)
+					}
+					sb.WriteString("│ ▸ " + strings.Join(row, "  •  ") + "\n")
+				}
+				sb.WriteString("╰────────────────────────\n")
+			}
+
+			if len(bgBytes) > 0 {
+				return ctx.SendImage(bgBytes, sb.String())
 			}
 			return ctx.Reply(sb.String())
 		},

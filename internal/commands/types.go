@@ -23,12 +23,20 @@ type BotAPI interface {
 	SendSticker(to types.JID, webpData []byte, quoted *events.Message) error
 	SendStickerWithAudio(to types.JID, webpData, audioData []byte, isAnimated bool, quoted *events.Message) error
 	SendDocument(to types.JID, data []byte, filename, mimetype, caption string, quoted *events.Message) error
+	SendInteractiveListMenu(to types.JID, imgData []byte, outerBody, cardBody, footer, buttonTitle, sectionTitle string, rows []MenuListRow, quoted *events.Message) error
 	DeleteMessage(chat types.JID, sender types.JID, msgID types.MessageID) error
 	GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error)
 	InvalidateGroupCache(jid types.JID)
 	ResolvePN(jid types.JID) types.JID
 	SynthesizeVoice(text string) ([]byte, error)
 	Restart()
+}
+
+type MenuListRow struct {
+	Header      string `json:"header"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ID          string `json:"id"`
 }
 
 type Context struct {

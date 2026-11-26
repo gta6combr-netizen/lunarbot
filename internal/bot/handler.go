@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -84,10 +85,32 @@ func extractBody(m *waE2E.Message) string {
 		return *u.VideoMessage.Caption
 	case u.DocumentMessage != nil && u.DocumentMessage.Caption != nil:
 		return *u.DocumentMessage.Caption
+	case u.ButtonsResponseMessage != nil && u.ButtonsResponseMessage.GetSelectedButtonID() != "":
+		return u.ButtonsResponseMessage.GetSelectedButtonID()
 	case u.ButtonsResponseMessage != nil && u.ButtonsResponseMessage.GetSelectedDisplayText() != "":
 		return u.ButtonsResponseMessage.GetSelectedDisplayText()
+	case u.ListResponseMessage != nil && u.ListResponseMessage.GetSingleSelectReply().GetSelectedRowID() != "":
+		return u.ListResponseMessage.GetSingleSelectReply().GetSelectedRowID()
 	case u.ListResponseMessage != nil && u.ListResponseMessage.Title != nil:
 		return *u.ListResponseMessage.Title
+	case u.InteractiveResponseMessage != nil && u.InteractiveResponseMessage.GetNativeFlowResponseMessage() != nil:
+		if pjson := u.InteractiveResponseMessage.GetNativeFlowResponseMessage().GetParamsJSON(); pjson != "" {
+			var parsed struct {
+				ID         string `json:"id"`
+				SelectedID string `json:"selectedId"`
+			}
+			if json.Unmarshal([]byte(pjson), &parsed) == nil {
+				if parsed.ID != "" {
+					return parsed.ID
+				}
+				if parsed.SelectedID != "" {
+					return parsed.SelectedID
+				}
+			}
+		}
+		return u.InteractiveResponseMessage.GetBody().GetText()
+	case u.TemplateButtonReplyMessage != nil && u.TemplateButtonReplyMessage.GetSelectedID() != "":
+		return u.TemplateButtonReplyMessage.GetSelectedID()
 	case u.TemplateButtonReplyMessage != nil && u.TemplateButtonReplyMessage.SelectedDisplayText != nil:
 		return *u.TemplateButtonReplyMessage.SelectedDisplayText
 	case u.GroupInviteMessage != nil && u.GroupInviteMessage.Caption != nil:

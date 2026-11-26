@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -447,5 +448,80 @@ func (c *Client) SendDocument(to types.JID, data []byte, filename, mimetype, cap
 
 func (c *Client) DeleteMessage(chat types.JID, sender types.JID, msgID types.MessageID) error {
 	_, err := c.wa.SendMessage(context.Background(), chat, c.wa.BuildRevoke(chat, sender, msgID))
+	return err
+}
+
+func (c *Client) SendInteractiveListMenu(to types.JID, imgData []byte, outerBody, cardBody, footer, buttonTitle, sectionTitle string, rows []commands.MenuListRow, quoted *events.Message) error {
+	var imgMsg *waE2E.ImageMessage
+	if len(imgData) > 0 {
+		if up, err := c.wa.Upload(context.Background(), imgData, whatsmeow.MediaImage); err == nil {
+			imgMsg = &waE2E.ImageMessage{
+				Mimetype:      proto.String(http.DetectContentType(imgData)),
+				URL:           proto.String(up.URL),
+				DirectPath:    proto.String(up.DirectPath),
+				MediaKey:      up.MediaKey,
+				FileEncSHA256: up.FileEncSHA256,
+				FileSHA256:    up.FileSHA256,
+				FileLength:    proto.Uint64(uint64(len(imgData))),
+			}
+		}
+	}
+
+	paramsPayload := map[string]any{
+		"title": buttonTitle,
+		"sections": []map[string]any{
+			{
+				"title": sectionTitle,
+				"rows":  rows,
+			},
+		},
+	}
+	paramsBytes, err := json.Marshal(paramsPayload)
+	if err != nil {
+		return err
+	}
+
+	header := &waE2E.InteractiveMessage_Header{
+		HasMediaAttachment: proto.Bool(imgMsg != nil),
+	}
+	if imgMsg != nil {
+		header.Media = &waE2E.InteractiveMessage_Header_ImageMessage{
+			ImageMessage: imgMsg,
+		}
+	}
+
+	card := &waE2E.InteractiveMessage{
+		Header: header,
+		Body:   &waE2E.InteractiveMessage_Body{Text: proto.String(cardBody)},
+		Footer: &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
+		InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
+			NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{
+				Buttons: []*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
+					{
+						Name:             proto.String("single_select"),
+						ButtonParamsJSON: proto.String(string(paramsBytes)),
+					},
+				},
+			},
+		},
+	}
+
+	msg := &waE2E.Message{
+		ViewOnceMessage: &waE2E.FutureProofMessage{
+			Message: &waE2E.Message{
+				InteractiveMessage: &waE2E.InteractiveMessage{
+					ContextInfo: c.quotedContext(quoted, nil),
+					Body:        &waE2E.InteractiveMessage_Body{Text: proto.String(outerBody)},
+					Footer:      &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
+					InteractiveMessage: &waE2E.InteractiveMessage_CarouselMessage_{
+						CarouselMessage: &waE2E.InteractiveMessage_CarouselMessage{
+							Cards: []*waE2E.InteractiveMessage{card},
+						},
+					},
+				},
+			},
+		},
+	}
+	_, err = c.wa.SendMessage(context.Background(), to, msg)
 	return err
 }
