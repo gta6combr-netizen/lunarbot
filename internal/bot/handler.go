@@ -255,13 +255,14 @@ func (c *Client) handleMessage(evt *events.Message) {
 		}
 	}
 
-	// Non-command XP
-	if body != "" && !strings.HasPrefix(body, prefix) {
-		c.db.AddXP(permSender.String(), c.cfg.Moeda.XpPorMensagem, c.cfg.Niveis.XpBase, c.cfg.Niveis.Multiplicador)
-		return
-	}
-
+	// Non-command XP & Lunar human-like persona reply
 	if !strings.HasPrefix(body, prefix) {
+		if body != "" {
+			c.db.AddXP(permSender.String(), c.cfg.Moeda.XpPorMensagem, c.cfg.Niveis.XpBase, c.cfg.Niveis.Multiplicador)
+		}
+		if c.isLunarTriggered(evt, body) {
+			c.replyAsLunar(evt, evt.Info.PushName, body)
+		}
 		return
 	}
 
