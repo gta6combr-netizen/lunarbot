@@ -107,7 +107,96 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	return false
 }
 
-var audioRequestRE = regexp.MustCompile(`(?i)(manda|envia|fala|responde|faz).*(áudio|audio|voz)|(em|por|no)\s*(áudio|audio)`)
+var (
+	audioRequestRE = regexp.MustCompile(`(?i)(manda|envia|fala|responde|faz).*(áudio|audio|voz)|(em|por|no)\s*(áudio|audio)`)
+	atMentionRE    = regexp.MustCompile(`@\d+`)
+)
+
+// parseNaturalCommand extracts a bot command from natural language when Lunar is addressed without a prefix.
+func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string, q string, ok bool) {
+	cleaned := lunarMentionRE.ReplaceAllString(body, " ")
+	cleanedNoAt := strings.TrimSpace(atMentionRE.ReplaceAllString(cleaned, " "))
+	cleanedNoAt = strings.TrimLeft(cleanedNoAt, ",:;-!? ")
+	lower := strings.ToLower(cleanedNoAt)
+	if lower == "" {
+		return "", nil, "", false
+	}
+
+	// Preserve @mentions in args for commands that target users
+	rawAfterLunar := strings.TrimSpace(lunarMentionRE.ReplaceAllString(body, " "))
+	rawAfterLunar = strings.TrimLeft(rawAfterLunar, ",:;-!? ")
+	rawFields := strings.Fields(rawAfterLunar)
+
+	// 1. Direct command name right after "lunar" (e.g. "lunar menu", "lunar ban @user", "lunar play matue")
+	if len(rawFields) > 0 {
+		first := strings.ToLower(strings.Trim(rawFields[0], ",:;.!?"))
+		if c.registry != nil && c.registry.Get(first) != nil && first != "." {
+			// Avoid hijacking casual chat like "lunar oi" or "lunar tudo bem"
+			if first != "oi" && first != "ola" && first != "olá" {
+				rest := rawFields[1:]
+				return first, rest, strings.Join(rest, " "), true
+			}
+		}
+	}
+
+	// 2. Natural Portuguese intents
+	switch {
+	case strings.Contains(lower, "figurinha") && (strings.Contains(lower, "audio") || strings.Contains(lower, "áudio")):
+		return "figaudio", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "figurinha") && (strings.Contains(lower, "circulo") || strings.Contains(lower, "círculo") || strings.Contains(lower, "redonda")):
+		return "stickercirculo", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "figurinha") || strings.Contains(lower, "sticker"):
+		return "sticker", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "menu") || strings.Contains(lower, "comandos") || strings.Contains(lower, "lista de comandos"):
+		return "menu", nil, "", true
+	case strings.Contains(lower, "revela") || strings.Contains(lower, "visualização única") || strings.Contains(lower, "visualizacao unica"):
+		return "revela", nil, "", true
+	case strings.Contains(lower, "abre o grupo") || strings.Contains(lower, "abrir grupo") || strings.Contains(lower, "abrir o grupo"):
+		return "abrir", nil, "", true
+	case strings.Contains(lower, "fecha o grupo") || strings.Contains(lower, "fechar grupo") || strings.Contains(lower, "fechar o grupo"):
+		return "fechar", nil, "", true
+	case strings.HasPrefix(lower, "bane ") || strings.HasPrefix(lower, "ban ") || strings.HasPrefix(lower, "expulsa "):
+		return "ban", rawFields[1:], strings.Join(rawFields[1:], " "), true
+	case strings.HasPrefix(lower, "muta ") || strings.HasPrefix(lower, "silencia "):
+		return "mute", rawFields[1:], strings.Join(rawFields[1:], " "), true
+	case strings.HasPrefix(lower, "desmuta "):
+		return "unmute", rawFields[1:], strings.Join(rawFields[1:], " "), true
+	case strings.HasPrefix(lower, "promove "):
+		return "promover", rawFields[1:], strings.Join(rawFields[1:], " "), true
+	case strings.HasPrefix(lower, "rebaixa "):
+		return "rebaixar", rawFields[1:], strings.Join(rawFields[1:], " "), true
+	case strings.Contains(lower, "marca todo mundo") || strings.Contains(lower, "marcar todos") || strings.Contains(lower, "marca geral"):
+		return "marcar", nil, "", true
+	case strings.HasPrefix(lower, "toca ") || strings.HasPrefix(lower, "baixa a musica ") || strings.HasPrefix(lower, "baixa a música ") || strings.HasPrefix(lower, "bota pra tocar "):
+		query := cleanedNoAt
+		for _, pfx := range []string{"toca ", "baixa a musica ", "baixa a música ", "bota pra tocar "} {
+			if strings.HasPrefix(strings.ToLower(query), pfx) {
+				query = strings.TrimSpace(query[len(pfx):])
+				break
+			}
+		}
+		if query != "" {
+			return "play", strings.Fields(query), query, true
+		}
+	case strings.Contains(lower, "abraça") || strings.Contains(lower, "abrace") || strings.Contains(lower, "abraca") || strings.Contains(lower, "abraço"):
+		return "abraco", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "beija") || strings.Contains(lower, "beije") || strings.Contains(lower, "beijo"):
+		return "beijo", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "dá um tapa") || strings.Contains(lower, "da um tapa"):
+		return "tapa", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "dá um soco") || strings.Contains(lower, "da um soco"):
+		return "soco", rawFields, rawAfterLunar, true
+	case strings.Contains(lower, "shippa") || strings.Contains(lower, "shipa"):
+		return "ship", rawFields, rawAfterLunar, true
+	case strings.HasPrefix(lower, "repete "):
+		txt := strings.TrimSpace(rawAfterLunar[len("repete "):])
+		if txt != "" {
+			return "fala", strings.Fields(txt), txt, true
+		}
+	}
+
+	return "", nil, "", false
+}
 
 func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) {
 	chatID := evt.Info.Chat.String()

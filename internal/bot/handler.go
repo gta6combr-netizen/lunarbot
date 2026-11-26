@@ -255,12 +255,18 @@ func (c *Client) handleMessage(evt *events.Message) {
 		}
 	}
 
-	// Non-command XP & Lunar human-like persona reply
+	// Non-command XP & Lunar natural-language commands / human-like persona reply
 	if !strings.HasPrefix(body, prefix) {
 		if body != "" {
 			c.db.AddXP(permSender.String(), c.cfg.Moeda.XpPorMensagem, c.cfg.Niveis.XpBase, c.cfg.Niveis.Multiplicador)
 		}
 		if c.isLunarTriggered(evt, body) {
+			if cmdName, args, q, ok := c.parseNaturalCommand(body); ok {
+				if cmd := c.registry.Get(cmdName); cmd != nil {
+					c.executeCommand(evt, cmd, chat, permSender, isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip, groupInfo, groupName, prefix, cmdName, args, q, body)
+					return
+				}
+			}
 			c.replyAsLunar(evt, evt.Info.PushName, body, isDono)
 		}
 		return
@@ -284,6 +290,20 @@ func (c *Client) handleMessage(evt *events.Message) {
 	if cmd == nil {
 		return
 	}
+
+	c.executeCommand(evt, cmd, chat, permSender, isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip, groupInfo, groupName, prefix, cmdName, args, q, body)
+}
+
+func (c *Client) executeCommand(
+	evt *events.Message,
+	cmd *commands.Command,
+	chat, permSender types.JID,
+	isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip bool,
+	groupInfo *types.GroupInfo,
+	groupName, prefix, cmdName string,
+	args []string,
+	q, body string,
+) {
 
 	ctx := &commands.Context{
 		Bot:          c,
