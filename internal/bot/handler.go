@@ -132,6 +132,25 @@ func (c *Client) checkFlood(groupID, userID string) bool {
 	return len(fresh) >= 6
 }
 
+func samePhone(a, b string) bool {
+	da := config.CleanNumber(a)
+	db := config.CleanNumber(b)
+	if da == "" || db == "" {
+		return false
+	}
+	if da == db {
+		return true
+	}
+	// Normalize Brazilian mobile numbers (55 + 2-digit DDD + optional '9' + 8 digits)
+	normBR := func(s string) string {
+		if strings.HasPrefix(s, "55") && len(s) == 13 && s[4] == '9' {
+			return s[:4] + s[5:]
+		}
+		return s
+	}
+	return normBR(da) == normBR(db)
+}
+
 func (c *Client) handleMessage(evt *events.Message) {
 	if evt == nil || evt.Message == nil {
 		return
@@ -147,8 +166,11 @@ func (c *Client) handleMessage(evt *events.Message) {
 	isGroup := chat.Server == types.GroupServer
 	sender := evt.Info.Sender.ToNonAD()
 	permSender := c.ResolvePN(sender)
-	if evt.Info.SenderAlt.User != "" && sender.Server == types.HiddenUserServer {
+	if evt.Info.SenderAlt.User != "" && permSender.Server == types.HiddenUserServer {
 		permSender = evt.Info.SenderAlt.ToNonAD()
+	}
+	if !isGroup && permSender.Server == types.HiddenUserServer && chat.Server == types.DefaultUserServer {
+		permSender = chat.ToNonAD()
 	}
 
 	prefix := c.cfg.Prefix
@@ -163,15 +185,16 @@ func (c *Client) handleMessage(evt *events.Message) {
 		return
 	}
 
-	// Dono check
+	// Dono check (handles BR 9th digit & LID/PN)
 	donoNum := config.CleanNumber(c.cfg.NumeroDoDono)
 	senderNum := config.CleanNumber(permSender.User)
 	botNum := ""
 	if c.wa.Store.ID != nil {
 		botNum = config.CleanNumber(c.wa.Store.ID.User)
 	}
-	isDono := (donoNum != "" && senderNum == donoNum) ||
-		(botNum != "" && senderNum == botNum) ||
+	isDono := samePhone(senderNum, donoNum) ||
+		samePhone(sender.User, donoNum) ||
+		samePhone(senderNum, botNum) ||
 		c.db.IsDonoExtra(permSender.String()) ||
 		c.db.IsDonoExtra(sender.String())
 
