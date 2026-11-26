@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -198,13 +202,66 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 	return "", nil, "", false
 }
 
+func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
+	tryMsg := func(m *waE2E.Message) ([]byte, string) {
+		u := unwrapMsg(m)
+		if u == nil {
+			return nil, ""
+		}
+		if u.ImageMessage != nil {
+			if data, err := c.wa.Download(context.Background(), u.ImageMessage); err == nil && len(data) > 0 {
+				mime := http.DetectContentType(data)
+				if !strings.HasPrefix(mime, "image/") {
+					mime = "image/jpeg"
+				}
+				return data, mime
+			}
+		}
+		if u.StickerMessage != nil {
+			if webp, err := c.wa.Download(context.Background(), u.StickerMessage); err == nil && len(webp) > 0 {
+				id := fmt.Sprintf("%d", time.Now().UnixNano())
+				inPath := filepath.Join(c.cfg.RootDir, "temp", "vis_"+id+".webp")
+				outPath := filepath.Join(c.cfg.RootDir, "temp", "vis_"+id+".png")
+				defer os.Remove(inPath)
+				defer os.Remove(outPath)
+				if os.WriteFile(inPath, webp, 0644) == nil {
+					cmd := exec.Command("ffmpeg", "-y", "-i", inPath, "-frames:v", "1", outPath)
+					if cmd.Run() == nil {
+						if png, err := os.ReadFile(outPath); err == nil && len(png) > 0 {
+							return png, "image/png"
+						}
+					}
+				}
+				return webp, "image/webp"
+			}
+		}
+		return nil, ""
+	}
+
+	if data, mime := tryMsg(evt.Message); len(data) > 0 {
+		return data, mime
+	}
+	if ci := getMsgContextInfo(evt.Message); ci != nil && ci.QuotedMessage != nil {
+		if data, mime := tryMsg(ci.QuotedMessage); len(data) > 0 {
+			return data, mime
+		}
+	}
+	return nil, ""
+}
+
 func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) {
 	chatID := evt.Info.Chat.String()
 	if senderName == "" {
 		senderName = "amigo"
 	}
+
+	imgData, imgMime := c.extractMediaForVision(evt)
 	if body == "" {
-		body = "oi"
+		if len(imgData) > 0 {
+			body = "(enviou uma figurinha ou imagem, reaja ao que você vê nela)"
+		} else {
+			body = "oi"
+		}
 	}
 
 	wantsAudio := audioRequestRE.MatchString(body)
@@ -216,7 +273,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 
 	var reply string
 	if c.cfg.GeminiAPIKey != "" {
-		if resp, err := c.askLunarGemini(chatID, senderName, body, isDono); err == nil && resp != "" {
+		if resp, err := c.askLunarGemini(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
 			reply = resp
 		} else if err != nil {
 			logger.Yellow("[Lunar Persona] Gemini fallback: %v", err)
@@ -242,7 +299,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
-func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (string, error) {
+func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, error) {
 	personaMu.Lock()
 	hist := append([]chatTurn(nil), chatHist[chatID]...)
 	personaMu.Unlock()
@@ -260,6 +317,7 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (s
 	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
 		"Escreva exatamente como uma pessoa real no zap: frases curtas (1 a 2 frases), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Você tem personalidade forte e língua afiada: se te provocarem, xingarem, discordarem de você ou falarem merda, você rebate, discute e xinga de volta naturalmente no tom de zap brasileiro, sem frescura e sem abaixar a cabeça. " +
+		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
 		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
 
 	contents := make([]map[string]any, 0, len(hist)+1)
@@ -274,9 +332,20 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool) (s
 		roleTag = senderName + " (SEU DONO)"
 	}
 	userMsg := fmt.Sprintf("[%s]: %s", roleTag, body)
+	userParts := []map[string]any{
+		{"text": userMsg},
+	}
+	if len(imgData) > 0 && imgMime != "" {
+		userParts = append(userParts, map[string]any{
+			"inlineData": map[string]string{
+				"mimeType": imgMime,
+				"data":     base64.StdEncoding.EncodeToString(imgData),
+			},
+		})
+	}
 	contents = append(contents, map[string]any{
 		"role":  "user",
-		"parts": []map[string]string{{"text": userMsg}},
+		"parts": userParts,
 	})
 
 	payload := map[string]any{
