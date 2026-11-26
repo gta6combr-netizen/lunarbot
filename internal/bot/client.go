@@ -491,31 +491,21 @@ func (c *Client) SendInteractiveListMenu(to types.JID, imgData []byte, outerBody
 		}
 	}
 
-	card := &waE2E.InteractiveMessage{
-		Header: header,
-		Body:   &waE2E.InteractiveMessage_Body{Text: proto.String(cardBody)},
-		Footer: &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
-		InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
-			NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{
-				Buttons: []*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
-					{
-						Name:             proto.String("single_select"),
-						ButtonParamsJSON: proto.String(string(paramsBytes)),
-					},
-				},
-			},
-		},
-	}
-
 	msg := &waE2E.Message{
 		InteractiveMessage: &waE2E.InteractiveMessage{
 			ContextInfo: c.quotedContext(quoted, nil),
-			Body:        &waE2E.InteractiveMessage_Body{Text: proto.String(outerBody)},
+			Header:      header,
+			Body:        &waE2E.InteractiveMessage_Body{Text: proto.String(cardBody)},
 			Footer:      &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
-			InteractiveMessage: &waE2E.InteractiveMessage_CarouselMessage_{
-				CarouselMessage: &waE2E.InteractiveMessage_CarouselMessage{
-					Cards:          []*waE2E.InteractiveMessage{card},
+			InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
+				NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{
 					MessageVersion: proto.Int32(1),
+					Buttons: []*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
+						{
+							Name:             proto.String("single_select"),
+							ButtonParamsJSON: proto.String(string(paramsBytes)),
+						},
+					},
 				},
 			},
 		},

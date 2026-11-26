@@ -168,6 +168,9 @@ func registerUtilidades(r *Registry) {
 					Description: fmt.Sprintf("%d comandos disponíveis", len(cmds)),
 					ID:          fmt.Sprintf("%smenu %s", ctx.Prefix, cat),
 				})
+				if len(rows) >= 10 {
+					break
+				}
 			}
 
 			bgBytes, _ := os.ReadFile(filepath.Join(ctx.Config.RootDir, "assets", "menu-bg.jpeg"))
