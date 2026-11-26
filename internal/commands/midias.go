@@ -270,17 +270,15 @@ func registerMidias(r *Registry) {
 				if err != nil {
 					return ctx.Reply("❌ Erro ao gerar figurinha: " + err.Error())
 				}
-				if err := ctx.SendSticker(webp); err != nil {
-					return ctx.Reply("❌ Erro ao enviar figurinha: " + err.Error())
-				}
-				mp3, err := runFFmpeg(ctx, data, "mp4", "mp3", []string{"-t", "30", "-vn", "-ab", "192k"})
+				ogg, err := runFFmpeg(ctx, data, "mp4", "ogg", []string{"-t", "30", "-vn", "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000"})
 				if err != nil {
-					return ctx.Reply("⚠️ Figurinha enviada, mas o vídeo não possui faixa de áudio válida.")
+					_ = ctx.SendSticker(webp)
+					return ctx.Reply("⚠️ Figurinha enviada sem áudio (o vídeo não possui faixa de áudio válida).")
 				}
-				return ctx.SendAudio(mp3, true)
+				return ctx.SendStickerWithAudio(webp, ogg, true)
 			}
 
-			// kind == "audio": gera figurinha animada com waveform e envia junto com o áudio
+			// kind == "audio": gera figurinha animada com waveform + áudio embutido no mesmo StickerMessage
 			webp, err := runFFmpeg(ctx, data, "ogg", "webp", []string{
 				"-t", "6",
 				"-filter_complex", "[0:a]showwaves=s=512x512:mode=cline:rate=15:colors=0xa855f7|0x38bdf8,format=yuva420p[v]",
@@ -290,14 +288,11 @@ func registerMidias(r *Registry) {
 			if err != nil {
 				return ctx.Reply("❌ Erro ao gerar figurinha do áudio: " + err.Error())
 			}
-			if err := ctx.SendSticker(webp); err != nil {
-				return ctx.Reply("❌ Erro ao enviar figurinha: " + err.Error())
-			}
-			mp3, err := runFFmpeg(ctx, data, "ogg", "mp3", []string{"-ab", "192k"})
+			ogg, err := runFFmpeg(ctx, data, "ogg", "ogg", []string{"-t", "30", "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000"})
 			if err != nil {
-				return ctx.SendAudio(data, true)
+				ogg = data
 			}
-			return ctx.SendAudio(mp3, true)
+			return ctx.SendStickerWithAudio(webp, ogg, true)
 		},
 	})
 

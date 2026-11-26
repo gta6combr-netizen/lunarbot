@@ -347,6 +347,44 @@ func (c *Client) SendSticker(to types.JID, webpData []byte, quoted *events.Messa
 	return err
 }
 
+func (c *Client) SendStickerWithAudio(to types.JID, webpData, audioData []byte, isAnimated bool, quoted *events.Message) error {
+	upSticker, err := c.wa.Upload(context.Background(), webpData, whatsmeow.MediaImage)
+	if err != nil {
+		return err
+	}
+	upAudio, err := c.wa.Upload(context.Background(), audioData, whatsmeow.MediaAudio)
+	if err != nil {
+		return err
+	}
+	_, err = c.wa.SendMessage(context.Background(), to, &waE2E.Message{
+		StickerMessage: &waE2E.StickerMessage{
+			Mimetype:      proto.String("image/webp"),
+			Width:         proto.Uint32(512),
+			Height:        proto.Uint32(512),
+			IsAnimated:    proto.Bool(isAnimated),
+			URL:           proto.String(upSticker.URL),
+			DirectPath:    proto.String(upSticker.DirectPath),
+			MediaKey:      upSticker.MediaKey,
+			FileEncSHA256: upSticker.FileEncSHA256,
+			FileSHA256:    upSticker.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(webpData))),
+			ContextInfo:   c.quotedContext(quoted, nil),
+			Audio: &waE2E.StickerMessage_AudioMessage{
+				AudioMessage: &waE2E.AudioMessage{
+					Mimetype:      proto.String("audio/ogg; codecs=opus"),
+					URL:           proto.String(upAudio.URL),
+					DirectPath:    proto.String(upAudio.DirectPath),
+					MediaKey:      upAudio.MediaKey,
+					FileEncSHA256: upAudio.FileEncSHA256,
+					FileSHA256:    upAudio.FileSHA256,
+					FileLength:    proto.Uint64(uint64(len(audioData))),
+				},
+			},
+		},
+	})
+	return err
+}
+
 func (c *Client) SendDocument(to types.JID, data []byte, filename, mimetype, caption string, quoted *events.Message) error {
 	up, err := c.wa.Upload(context.Background(), data, whatsmeow.MediaDocument)
 	if err != nil {

@@ -20,6 +20,7 @@ type BotAPI interface {
 	SendVideo(to types.JID, data []byte, caption string, gifPlayback bool, quoted *events.Message, mentions ...string) error
 	SendAudio(to types.JID, data []byte, ptt bool, quoted *events.Message) error
 	SendSticker(to types.JID, webpData []byte, quoted *events.Message) error
+	SendStickerWithAudio(to types.JID, webpData, audioData []byte, isAnimated bool, quoted *events.Message) error
 	SendDocument(to types.JID, data []byte, filename, mimetype, caption string, quoted *events.Message) error
 	DeleteMessage(chat types.JID, sender types.JID, msgID types.MessageID) error
 	GetGroupInfo(ctx context.Context, jid types.JID) (*types.GroupInfo, error)
@@ -73,6 +74,10 @@ func (c *Context) SendVideo(data []byte, caption string, gif bool, mentions ...s
 
 func (c *Context) SendSticker(webp []byte) error {
 	return c.Bot.SendSticker(c.From, webp, c.Event)
+}
+
+func (c *Context) SendStickerWithAudio(webp, audio []byte, isAnimated bool) error {
+	return c.Bot.SendStickerWithAudio(c.From, webp, audio, isAnimated, c.Event)
 }
 
 func (c *Context) SendAudio(data []byte, ptt bool) error {
