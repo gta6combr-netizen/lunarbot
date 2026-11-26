@@ -29,22 +29,82 @@ func findEdgeTTS() string {
 }
 
 // SynthesizeVoice generates a WhatsApp-ready OGG/Opus PTT voice note.
-// Prefers Gemini 2.5 Flash TTS when apiKey is configured, falling back to edge-tts.
-func SynthesizeVoice(rootDir, apiKey, text string) ([]byte, error) {
+// Priority: ElevenLabs (if key set) -> Gemini 2.5 Flash TTS (if key set) -> edge-tts.
+func SynthesizeVoice(rootDir, elevenKey, elevenVoice, geminiKey, text string) ([]byte, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, fmt.Errorf("texto vazio")
 	}
-	if apiKey != "" {
+	if elevenKey != "" {
+		if elevenVoice == "" {
+			elevenVoice = "FGY2WhTYpPnrIDTdsKH5"
+		}
+		if ogg, err := synthesizeElevenLabsTTS(rootDir, elevenKey, elevenVoice, text); err == nil && len(ogg) > 0 {
+			return ogg, nil
+		}
+	}
+	if geminiKey != "" {
 		voice := os.Getenv("GEMINI_VOICE")
 		if voice == "" {
 			voice = "Zephyr"
 		}
-		if ogg, err := synthesizeGeminiTTS(rootDir, apiKey, voice, text); err == nil && len(ogg) > 0 {
+		if ogg, err := synthesizeGeminiTTS(rootDir, geminiKey, voice, text); err == nil && len(ogg) > 0 {
 			return ogg, nil
 		}
 	}
 	return synthesizeEdgeTTS(rootDir, text)
+}
+
+func synthesizeElevenLabsTTS(rootDir, apiKey, voiceID, text string) ([]byte, error) {
+	payload := map[string]any{
+		"text":     text,
+		"model_id": "eleven_flash_v2_5",
+		"voice_settings": map[string]any{
+			"stability":        0.45,
+			"similarity_boost": 0.80,
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := "https://api.elevenlabs.io/v1/text-to-speech/" + url.PathEscape(voiceID)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("xi-api-key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "audio/mpeg")
+
+	cl := &http.Client{Timeout: 25 * time.Second}
+	resp, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("elevenlabs HTTP %d", resp.StatusCode)
+	}
+	mp3, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if err != nil || len(mp3) < 256 {
+		return nil, fmt.Errorf("elevenlabs empty audio")
+	}
+
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	mp3Path := filepath.Join(rootDir, "temp", "el_"+id+".mp3")
+	oggPath := filepath.Join(rootDir, "temp", "el_"+id+".ogg")
+	defer os.Remove(mp3Path)
+	defer os.Remove(oggPath)
+
+	if err := os.WriteFile(mp3Path, mp3, 0644); err != nil {
+		return nil, err
+	}
+	ff := exec.Command("ffmpeg", "-y", "-i", mp3Path, "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000", oggPath)
+	if out, err := ff.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("ffmpeg mp3->ogg: %v (%s)", err, string(out))
+	}
+	return os.ReadFile(oggPath)
 }
 
 func synthesizeGeminiTTS(rootDir, apiKey, voice, text string) ([]byte, error) {

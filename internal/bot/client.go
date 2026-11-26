@@ -141,7 +141,7 @@ func (c *Client) Restart() {
 }
 
 func (c *Client) SynthesizeVoice(text string) ([]byte, error) {
-	return SynthesizeVoice(c.cfg.RootDir, c.cfg.GeminiAPIKey, text)
+	return SynthesizeVoice(c.cfg.RootDir, c.cfg.ElevenLabsAPIKey, c.cfg.ElevenLabsVoiceID, c.cfg.GeminiAPIKey, text)
 }
 
 func (c *Client) QRStatus() (connected bool, qrPNG []byte) {

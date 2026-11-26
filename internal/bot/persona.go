@@ -291,7 +291,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	if wantsAudio {
-		if ogg, err := SynthesizeVoice(c.cfg.RootDir, c.cfg.GeminiAPIKey, reply); err == nil && len(ogg) > 0 {
+		if ogg, err := SynthesizeVoice(c.cfg.RootDir, c.cfg.ElevenLabsAPIKey, c.cfg.ElevenLabsVoiceID, c.cfg.GeminiAPIKey, reply); err == nil && len(ogg) > 0 {
 			_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
 			_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
 			return

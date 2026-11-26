@@ -32,6 +32,8 @@ type Config struct {
 	TempCleanupMinutes int          `json:"tempCleanupMinutes"`
 	GeminiAPIKey       string       `json:"geminiApiKey"`
 	RapidAPIKey        string       `json:"rapidApiKey"`
+	ElevenLabsAPIKey   string       `json:"elevenLabsApiKey"`
+	ElevenLabsVoiceID  string       `json:"elevenLabsVoiceId"`
 	Moeda              MoedaConfig  `json:"moeda"`
 	Niveis             NiveisConfig `json:"niveis"`
 	RootDir            string       `json:"-"`
@@ -84,6 +86,15 @@ func Load(rootDir string) (*Config, error) {
 	}
 	if v := os.Getenv("RAPIDAPI_KEY"); v != "" {
 		cfg.RapidAPIKey = v
+	}
+	if v := os.Getenv("ELEVENLABS_API_KEY"); v != "" {
+		cfg.ElevenLabsAPIKey = v
+	}
+	if v := os.Getenv("ELEVENLABS_VOICE_ID"); v != "" {
+		cfg.ElevenLabsVoiceID = v
+	}
+	if cfg.ElevenLabsVoiceID == "" {
+		cfg.ElevenLabsVoiceID = "FGY2WhTYpPnrIDTdsKH5"
 	}
 
 	if cfg.Prefix == "" {
