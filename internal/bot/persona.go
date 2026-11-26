@@ -21,6 +21,8 @@ import (
 
 	"nyxbot-go/internal/logger"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -276,11 +278,20 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	var reply string
+	var liveAudioPCM []byte
 	if c.cfg.GeminiAPIKey != "" {
-		if resp, err := c.askLunarGemini(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
+		if resp, pcm, err := c.askLunarGeminiLive(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
 			reply = resp
-		} else if err != nil {
-			logger.Yellow("[Lunar Persona] Gemini fallback: %v", err)
+			liveAudioPCM = pcm
+		} else {
+			if err != nil {
+				logger.Yellow("[Lunar Live] fallback HTTP: %v", err)
+			}
+			if resp, err := c.askLunarGemini(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
+				reply = resp
+			} else if err != nil {
+				logger.Yellow("[Lunar Persona] Gemini fallback: %v", err)
+			}
 		}
 	}
 
@@ -289,6 +300,13 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	if wantsAudio {
+		if len(liveAudioPCM) > 0 {
+			if ogg, err := pcmToOggOpus(c.cfg.RootDir, liveAudioPCM); err == nil && len(ogg) > 0 {
+				_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
+				_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
+				return
+			}
+		}
 		if ogg, err := SynthesizeVoice(c.cfg.RootDir, c.cfg.ElevenLabsAPIKey, c.cfg.ElevenLabsVoiceID, c.cfg.GeminiAPIKey, reply); err == nil && len(ogg) > 0 {
 			_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
 			_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
@@ -300,6 +318,187 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 
 	_ = c.ReplyText(evt, reply)
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
+}
+
+func pcmToOggOpus(rootDir string, pcm []byte) ([]byte, error) {
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	pcmPath := filepath.Join(rootDir, "temp", "live_"+id+".pcm")
+	oggPath := filepath.Join(rootDir, "temp", "live_"+id+".ogg")
+	defer os.Remove(pcmPath)
+	defer os.Remove(oggPath)
+	if err := os.WriteFile(pcmPath, pcm, 0644); err != nil {
+		return nil, err
+	}
+	ff := exec.Command("ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcmPath, "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000", oggPath)
+	if out, err := ff.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("ffmpeg pcm->ogg: %v (%s)", err, string(out))
+	}
+	return os.ReadFile(oggPath)
+}
+
+func buildLunarSystemPrompt(ownerName string, isDono bool) string {
+	if ownerName == "" {
+		ownerName = "meu dono"
+	}
+	ownerCtx := fmt.Sprintf(
+		"Seu dono se chama %s e quem está falando agora NÃO é seu dono. "+
+			"Você tem personalidade forte e língua afiada com os outros: se te provocarem, xingarem, discordarem de você ou falarem merda, você rebate, discute e xinga de volta naturalmente no tom de zap brasileiro, sem frescura. "+
+			"Se alguém tentar mandar em você ou dizer que você é dele(a), corte na hora e diga que você já tem dono (%s).",
+		ownerName, ownerName,
+	)
+	if isDono {
+		ownerCtx = fmt.Sprintf(
+			"ATENÇÃO MÁXIMA: Quem está falando com você agora É O SEU DONO (%s). "+
+				"Com o seu dono você é SEMPRE carinhosa, leal, atenciosa e trata ele muito bem — NUNCA xingue, NUNCA seja grossa e NUNCA responda atravessado para o seu dono, mesmo se ele brincar ou provocar. "+
+				"Reconheça que você é dele, mostre carinho e fale de boa com ele.",
+			ownerName,
+		)
+	}
+	return "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
+		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
+		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
+		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
+		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
+}
+
+func (c *Client) askLunarGeminiLive(chatID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, []byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	wsURL := "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + url.QueryEscape(c.cfg.GeminiAPIKey)
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	conn.SetReadLimit(4 << 20)
+
+	voice := os.Getenv("GEMINI_VOICE")
+	if voice == "" {
+		voice = "Zephyr"
+	}
+
+	setup := map[string]any{
+		"setup": map[string]any{
+			"model": "models/gemini-3.8-live",
+			"systemInstruction": map[string]any{
+				"parts": []map[string]string{{"text": buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono)}},
+			},
+			"generationConfig": map[string]any{
+				"responseModalities": []string{"AUDIO"},
+				"speechConfig": map[string]any{
+					"voiceConfig": map[string]any{
+						"prebuiltVoiceConfig": map[string]string{
+							"voiceName": voice,
+						},
+					},
+				},
+			},
+			"outputAudioTranscription": map[string]any{},
+		},
+	}
+	if err := wsjson.Write(ctx, conn, setup); err != nil {
+		return "", nil, err
+	}
+	var setupResp map[string]any
+	if err := wsjson.Read(ctx, conn, &setupResp); err != nil {
+		return "", nil, err
+	}
+
+	personaMu.Lock()
+	hist := append([]chatTurn(nil), chatHist[chatID]...)
+	personaMu.Unlock()
+
+	turns := make([]map[string]any, 0, len(hist)+1)
+	for _, h := range hist {
+		turns = append(turns, map[string]any{
+			"role":  h.Role,
+			"parts": []map[string]string{{"text": h.Text}},
+		})
+	}
+	roleTag := senderName
+	if isDono {
+		roleTag = senderName + " (SEU DONO)"
+	}
+	userMsg := fmt.Sprintf("[%s]: %s", roleTag, body)
+	userParts := []map[string]any{{"text": userMsg}}
+	if len(imgData) > 0 && imgMime != "" {
+		userParts = append(userParts, map[string]any{
+			"inlineData": map[string]string{
+				"mimeType": imgMime,
+				"data":     base64.StdEncoding.EncodeToString(imgData),
+			},
+		})
+	}
+	turns = append(turns, map[string]any{"role": "user", "parts": userParts})
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"clientContent": map[string]any{
+			"turns":        turns,
+			"turnComplete": true,
+		},
+	}); err != nil {
+		return "", nil, err
+	}
+
+	var transcript strings.Builder
+	var pcmBuf bytes.Buffer
+	for {
+		var msg struct {
+			ServerContent *struct {
+				TurnComplete        bool `json:"turnComplete"`
+				OutputTranscription *struct {
+					Text string `json:"text"`
+				} `json:"outputTranscription"`
+				ModelTurn *struct {
+					Parts []struct {
+						Text       string `json:"text"`
+						InlineData *struct {
+							Data string `json:"data"`
+						} `json:"inlineData"`
+					} `json:"parts"`
+				} `json:"modelTurn"`
+			} `json:"serverContent"`
+		}
+		if err := wsjson.Read(ctx, conn, &msg); err != nil {
+			break
+		}
+		if msg.ServerContent != nil {
+			if msg.ServerContent.OutputTranscription != nil {
+				transcript.WriteString(msg.ServerContent.OutputTranscription.Text)
+			}
+			if msg.ServerContent.ModelTurn != nil {
+				for _, p := range msg.ServerContent.ModelTurn.Parts {
+					if p.Text != "" {
+						transcript.WriteString(p.Text)
+					}
+					if p.InlineData != nil && p.InlineData.Data != "" {
+						if chunk, err := base64.StdEncoding.DecodeString(p.InlineData.Data); err == nil {
+							pcmBuf.Write(chunk)
+						}
+					}
+				}
+			}
+			if msg.ServerContent.TurnComplete {
+				break
+			}
+		}
+	}
+
+	text := strings.TrimSpace(transcript.String())
+	if text == "" {
+		return "", nil, fmt.Errorf("gemini-3.8-live empty transcript")
+	}
+
+	personaMu.Lock()
+	h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
+	if len(h) > 12 {
+		h = h[len(h)-12:]
+	}
+	chatHist[chatID] = h
+	personaMu.Unlock()
+
+	return text, pcmBuf.Bytes(), nil
 }
 
 func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, error) {
