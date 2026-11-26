@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -320,11 +321,29 @@ func (c *Client) SendAudioWithCard(to types.JID, data []byte, ptt bool, title, b
 		if ci == nil {
 			ci = &waE2E.ContextInfo{}
 		}
+		smallThumb := thumb
+		if len(smallThumb) > 20000 {
+			id := fmt.Sprintf("%d", time.Now().UnixNano())
+			inP := filepath.Join(c.cfg.RootDir, "temp", "th_"+id+".jpg")
+			outP := filepath.Join(c.cfg.RootDir, "temp", "th_sm_"+id+".jpg")
+			if os.WriteFile(inP, smallThumb, 0644) == nil {
+				if exec.Command("ffmpeg", "-y", "-i", inP, "-vf", "scale=300:-2", "-q:v", "7", outP).Run() == nil {
+					if b, err := os.ReadFile(outP); err == nil && len(b) > 0 && len(b) <= 24000 {
+						smallThumb = b
+					}
+				}
+			}
+			_ = os.Remove(inP)
+			_ = os.Remove(outP)
+		}
+		if len(smallThumb) > 24000 {
+			smallThumb = nil
+		}
 		ci.ExternalAdReply = &waE2E.ContextInfo_ExternalAdReplyInfo{
 			Title:                 proto.String(title),
 			Body:                  proto.String(body),
 			MediaType:             waE2E.ContextInfo_ExternalAdReplyInfo_IMAGE.Enum(),
-			Thumbnail:             thumb,
+			Thumbnail:             smallThumb,
 			ThumbnailURL:          proto.String(thumbURL),
 			SourceURL:             proto.String(sourceURL),
 			RenderLargerThumbnail: proto.Bool(true),
