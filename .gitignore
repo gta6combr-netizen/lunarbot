@@ -1,6 +1,6 @@
 # Binaries
-lunarbot
-nyxbot
+/lunarbot
+/nyxbot
 *.exe
 
 # Runtime WAL/temp files (session .db files are tracked)
