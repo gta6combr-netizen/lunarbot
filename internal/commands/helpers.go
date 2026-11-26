@@ -101,17 +101,28 @@ func mentionTag(j types.JID) string {
 }
 
 func httpGetBytes(url string) ([]byte, error) {
+	return httpGetWithHeaders(url, nil)
+}
+
+func httpGetWithHeaders(url string, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "NyxBot/2.0 (Go)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, 30<<20))
+}
+
+func jsonUnmarshal(b []byte, dst any) error {
+	return json.Unmarshal(b, dst)
 }
 
 func httpGetJSON(url string, dst any) error {

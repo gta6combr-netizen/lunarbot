@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +12,75 @@ import (
 	"time"
 )
 
-var cropDetectRE = regexp.MustCompile(`crop=\d+:\d+:\d+:\d+`)
+var (
+	cropDetectRE = regexp.MustCompile(`crop=\d+:\d+:\d+:\d+`)
+	httpURLRE    = regexp.MustCompile(`https?://[^\s]+`)
+)
+
+func downloadVideoFromURL(ctx *Context, rawURL string) ([]byte, error) {
+	// 1. TikTok: try RapidAPI (if subscribed) then tikwm.com (free, no watermark)
+	if strings.Contains(strings.ToLower(rawURL), "tiktok.com") {
+		if ctx.Config.RapidAPIKey != "" {
+			var rapi struct {
+				Video    string `json:"video"`
+				Play     string `json:"play"`
+				Download string `json:"download_url"`
+				Data     struct {
+					Play string `json:"play"`
+				} `json:"data"`
+			}
+			ep := "https://tiktok-video-downloader25.p.rapidapi.com/download%20video?url=" + url.QueryEscape(rawURL)
+			if b, err := httpGetWithHeaders(ep, map[string]string{
+				"X-RapidAPI-Key":  ctx.Config.RapidAPIKey,
+				"X-RapidAPI-Host": "tiktok-video-downloader25.p.rapidapi.com",
+				"User-Agent":      "Mozilla/5.0",
+			}); err == nil && len(b) > 0 {
+				if strings.HasPrefix(string(b[:min(len(b), 12)]), "\x00\x00\x00") {
+					return b, nil
+				}
+				if err := jsonUnmarshal(b, &rapi); err == nil {
+					for _, u := range []string{rapi.Video, rapi.Play, rapi.Download, rapi.Data.Play} {
+						if strings.HasPrefix(u, "http") {
+							if vid, err := httpGetBytes(u); err == nil && len(vid) > 1024 {
+								return vid, nil
+							}
+						}
+					}
+				}
+			}
+		}
+
+		var tw struct {
+			Code int `json:"code"`
+			Data struct {
+				Play string `json:"play"`
+			} `json:"data"`
+		}
+		if err := httpGetJSON("https://www.tikwm.com/api/?url="+url.QueryEscape(rawURL), &tw); err == nil && tw.Code == 0 && tw.Data.Play != "" {
+			if vid, err := httpGetBytes(tw.Data.Play); err == nil && len(vid) > 1024 {
+				return vid, nil
+			}
+		}
+	}
+
+	// 2. Fallback: yt-dlp (YouTube, Instagram, TikTok, etc.)
+	outPath := filepath.Join(ctx.Config.RootDir, "temp", fmt.Sprintf("dlvid_%d.mp4", time.Now().UnixNano()))
+	defer os.Remove(outPath)
+	ytdlp := "yt-dlp"
+	if p, err := exec.LookPath("yt-dlp"); err == nil {
+		ytdlp = p
+	} else if home, err := os.UserHomeDir(); err == nil {
+		cand := filepath.Join(home, ".local", "bin", "yt-dlp")
+		if _, err := os.Stat(cand); err == nil {
+			ytdlp = cand
+		}
+	}
+	cmd := exec.Command(ytdlp, "-f", "mp4[filesize<25M]/best[ext=mp4]/best", "--max-filesize", "25M", "-o", outPath, rawURL)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("%v (%s)", err, string(out))
+	}
+	return os.ReadFile(outPath)
+}
 
 // detectCrop runs ffmpeg cropdetect to strip baked-in black bars (e.g. TikTok/Reels letterboxing).
 func detectCrop(ctx *Context, inData []byte, ext string) string {
@@ -284,9 +353,23 @@ func registerMidias(r *Registry) {
 		Category:    "midias",
 		Description: "Cria figurinha animada + áudio a partir de vídeo ou áudio respondido",
 		Execute: func(ctx *Context) error {
-			data, kind, err := downloadContextMedia(ctx)
-			if err != nil || (kind != "video" && kind != "audio") {
-				return ctx.Reply("❗ Responda a um *vídeo* ou *áudio* para criar figurinha com áudio.")
+			var data []byte
+			var kind string
+			var err error
+
+			if u := httpURLRE.FindString(ctx.Q); u != "" {
+				ctx.React("📥")
+				_ = ctx.Reply("⬇️ Baixando vídeo do link para fazer figurinha...")
+				data, err = downloadVideoFromURL(ctx, u)
+				if err != nil {
+					return ctx.Reply("❌ Erro ao baixar vídeo do link: " + err.Error())
+				}
+				kind = "video"
+			} else {
+				data, kind, err = downloadContextMedia(ctx)
+				if err != nil || (kind != "video" && kind != "audio") {
+					return ctx.Reply("❗ Responda a um *vídeo/áudio* ou mande um link (ex: `.figaudio https://vm.tiktok.com/...`).")
+				}
 			}
 			ctx.React("🔊")
 

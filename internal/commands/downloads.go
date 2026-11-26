@@ -325,15 +325,9 @@ func registerDownloads(r *Registry) {
 					return ctx.Reply("❗ Informe uma URL válida.")
 				}
 				ctx.React("📥")
-				outPath := filepath.Join(ctx.Config.RootDir, "temp", fmt.Sprintf("%s_%d.mp4", name, time.Now().UnixNano()))
-				defer os.Remove(outPath)
-				cmd := exec.Command(findYtDlp(), "-f", "mp4/best", "--max-filesize", "30M", "-o", outPath, ctx.Q)
-				if out, err := cmd.CombinedOutput(); err != nil {
-					return ctx.Reply("❌ Erro ao baixar: " + string(out))
-				}
-				data, err := os.ReadFile(outPath)
+				data, err := downloadVideoFromURL(ctx, ctx.Q)
 				if err != nil {
-					return ctx.Reply("❌ Erro ao ler vídeo.")
+					return ctx.Reply("❌ Erro ao baixar: " + err.Error())
 				}
 				return ctx.SendVideo(data, "✅ Download concluído!", false)
 			},
