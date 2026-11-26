@@ -70,6 +70,10 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	if evt.Info.IsFromMe {
 		return false
 	}
+	// In private chat (PV), always respond naturally to messages directed to Lunar
+	if evt.Info.Chat.Server != types.GroupServer {
+		return true
+	}
 	if body != "" && lunarMentionRE.MatchString(body) {
 		return true
 	}

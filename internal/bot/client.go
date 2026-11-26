@@ -19,6 +19,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	qrcode "github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -507,21 +508,40 @@ func (c *Client) SendInteractiveListMenu(to types.JID, imgData []byte, outerBody
 	}
 
 	msg := &waE2E.Message{
-		ViewOnceMessage: &waE2E.FutureProofMessage{
-			Message: &waE2E.Message{
-				InteractiveMessage: &waE2E.InteractiveMessage{
-					ContextInfo: c.quotedContext(quoted, nil),
-					Body:        &waE2E.InteractiveMessage_Body{Text: proto.String(outerBody)},
-					Footer:      &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
-					InteractiveMessage: &waE2E.InteractiveMessage_CarouselMessage_{
-						CarouselMessage: &waE2E.InteractiveMessage_CarouselMessage{
-							Cards: []*waE2E.InteractiveMessage{card},
+		InteractiveMessage: &waE2E.InteractiveMessage{
+			ContextInfo: c.quotedContext(quoted, nil),
+			Body:        &waE2E.InteractiveMessage_Body{Text: proto.String(outerBody)},
+			Footer:      &waE2E.InteractiveMessage_Footer{Text: proto.String(footer)},
+			InteractiveMessage: &waE2E.InteractiveMessage_CarouselMessage_{
+				CarouselMessage: &waE2E.InteractiveMessage_CarouselMessage{
+					Cards:          []*waE2E.InteractiveMessage{card},
+					MessageVersion: proto.Int32(1),
+				},
+			},
+		},
+	}
+	extra := whatsmeow.SendRequestExtra{
+		AdditionalNodes: &[]waBinary.Node{
+			{
+				Tag: "biz",
+				Content: []waBinary.Node{
+					{
+						Tag:   "interactive",
+						Attrs: waBinary.Attrs{"type": "native_flow", "v": "1"},
+						Content: []waBinary.Node{
+							{
+								Tag:   "native_flow",
+								Attrs: waBinary.Attrs{"v": "9", "name": "mixed"},
+							},
 						},
 					},
 				},
 			},
 		},
 	}
-	_, err = c.wa.SendMessage(context.Background(), to, msg)
+	_, err = c.wa.SendMessage(context.Background(), to, msg, extra)
+	if err != nil {
+		logger.Yellow("[Menu Interactive] SendMessage erro: %v", err)
+	}
 	return err
 }
