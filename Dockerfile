@@ -1,4 +1,5 @@
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
+ENV GOTOOLCHAIN=auto
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
