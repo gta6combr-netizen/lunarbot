@@ -738,25 +738,40 @@ func registerMidias(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "ttp", Aliases: []string{"attp", "figtexto"}, Category: "midias",
-		Description: "Cria figurinha de texto estilizada (.ttp <texto>)",
+		Name: "ttp", Aliases: []string{"attp", "figtexto", "sticktexto"}, Category: "midias",
+		Description: "Cria figurinha de texto animada letra por letra (.sticktexto <texto>)",
 		Execute: func(ctx *Context) error {
 			if ctx.Q == "" {
-				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.ttp bom dia`")
+				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.sticktexto Aaaaaa`")
 			}
 			ctx.React("✨")
-			palette := []color.RGBA{colText, colCyan, colAmber, color.RGBA{244, 114, 182, 255}, colEmerald}
-			fg := palette[0]
-			if ctx.CmdName == "attp" {
-				fg = palette[randInt(1, len(palette)-1)]
-			}
-			pngData, err := renderTextStickerPNG(ctx.Q, fg)
-			if err != nil {
+			fg := color.RGBA{0x56, 0x82, 0x03, 255} // #568203
+			frames, err := renderTextStickerFrames(ctx.Q, fg)
+			if err != nil || len(frames) == 0 {
 				return ctx.Reply("❌ Erro ao gerar texto.")
 			}
-			webp, err := runFFmpeg(ctx, pngData, "png", "webp", []string{"-vcodec", "libwebp", "-lossless", "1", "-an"})
-			if err != nil {
-				return ctx.Reply("❌ Erro ao converter figurinha.")
+
+			frameDir := filepath.Join(ctx.Config.RootDir, "temp", fmt.Sprintf("ttp_%d", time.Now().UnixNano()))
+			if err := os.MkdirAll(frameDir, 0755); err != nil {
+				return ctx.Reply("❌ Erro ao criar pasta temporária.")
+			}
+			defer os.RemoveAll(frameDir)
+
+			for i, fBytes := range frames {
+				p := filepath.Join(frameDir, fmt.Sprintf("f_%03d.png", i))
+				if err := os.WriteFile(p, fBytes, 0644); err != nil {
+					return ctx.Reply("❌ Erro ao salvar frame.")
+				}
+			}
+			outWebp := filepath.Join(frameDir, "out.webp")
+			cmd := exec.Command("ffmpeg", "-y", "-framerate", "10", "-i", filepath.Join(frameDir, "f_%03d.png"),
+				"-vcodec", "libwebp", "-lossless", "0", "-q:v", "80", "-loop", "0", "-an", outWebp)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return ctx.Reply("❌ Erro ao animar figurinha: " + string(out))
+			}
+			webp, err := os.ReadFile(outWebp)
+			if err != nil || len(webp) == 0 {
+				return ctx.Reply("❌ Erro ao ler figurinha.")
 			}
 			return ctx.SendSticker(webp)
 		},

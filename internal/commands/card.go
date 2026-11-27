@@ -155,13 +155,32 @@ func wrapText(face font.Face, text string, maxWidth int) []string {
 	if text == "" {
 		return nil
 	}
-	words := strings.Fields(text)
-	if len(words) == 0 {
+	var splitWords []string
+	for _, w := range strings.Fields(text) {
+		if face == nil || font.MeasureString(face, w).Ceil() <= maxWidth {
+			splitWords = append(splitWords, w)
+			continue
+		}
+		var chunk string
+		for _, r := range w {
+			cand := chunk + string(r)
+			if chunk != "" && font.MeasureString(face, cand).Ceil() > maxWidth {
+				splitWords = append(splitWords, chunk)
+				chunk = string(r)
+			} else {
+				chunk = cand
+			}
+		}
+		if chunk != "" {
+			splitWords = append(splitWords, chunk)
+		}
+	}
+	if len(splitWords) == 0 {
 		return nil
 	}
 	var lines []string
-	cur := words[0]
-	for _, w := range words[1:] {
+	cur := splitWords[0]
+	for _, w := range splitWords[1:] {
 		cand := cur + " " + w
 		if face != nil && font.MeasureString(face, cand).Ceil() > maxWidth {
 			lines = append(lines, cur)
@@ -794,6 +813,86 @@ func renderVersusCard(tag, title, leftName, rightName, centerBadge, footerText s
 	fillRoundedRect(img, 60, 336, w-120, 56, 14, colCardDark)
 	drawCenteredText(img, fFoot, w/2, 371, colText, stripEmojiForFont(footerText))
 	return encodePNG(img)
+}
+
+func renderTextStickerFrames(text string, fg color.RGBA) ([][]byte, error) {
+	const size = 512
+	f := makeFace(true, 58)
+	if f == nil {
+		return nil, fmt.Errorf("font unavailable")
+	}
+	defer f.Close()
+
+	fullLines := wrapText(f, text, 450)
+	if len(fullLines) == 0 {
+		return nil, fmt.Errorf("empty text")
+	}
+	if len(fullLines) > 6 {
+		fullLines = fullLines[:6]
+	}
+
+	totalRunes := 0
+	lineRunes := make([][]rune, len(fullLines))
+	for i, l := range fullLines {
+		r := []rune(l)
+		lineRunes[i] = r
+		totalRunes += len(r)
+	}
+	if totalRunes == 0 {
+		return nil, fmt.Errorf("empty text")
+	}
+
+	step := 1
+	if totalRunes > 24 {
+		step = (totalRunes + 23) / 24
+	}
+
+	var counts []int
+	for c := step; c < totalRunes; c += step {
+		counts = append(counts, c)
+	}
+	for h := 0; h < 6; h++ {
+		counts = append(counts, totalRunes)
+	}
+
+	lineH := 66
+	startY := (size-(len(fullLines)-1)*lineH)/2 + 18
+	outline := color.RGBA{10, 10, 16, 255}
+
+	var frames [][]byte
+	for _, limit := range counts {
+		img := image.NewRGBA(image.Rect(0, 0, size, size))
+		rem := limit
+		y := startY
+		for i, lr := range lineRunes {
+			if rem <= 0 {
+				break
+			}
+			take := len(lr)
+			if rem < take {
+				take = rem
+			}
+			rem -= take
+			partial := string(lr[:take])
+			fullW := font.MeasureString(f, fullLines[i]).Ceil()
+			x := (size - fullW) / 2
+			for oy := -3; oy <= 3; oy++ {
+				for ox := -3; ox <= 3; ox++ {
+					if ox != 0 || oy != 0 {
+						drawText(img, f, x+ox, y+oy, outline, partial)
+					}
+				}
+			}
+			drawText(img, f, x, y, fg, partial)
+			y += lineH
+		}
+		pngBytes, err := encodePNG(img)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, pngBytes)
+	}
+	return frames, nil
 }
 
 func renderTextStickerPNG(text string, fg color.RGBA) ([]byte, error) {
