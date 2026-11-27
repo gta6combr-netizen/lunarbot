@@ -10,6 +10,8 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -679,6 +681,63 @@ func renderProfileCard(name, jidTag string, coins, xp, needXP, level, wins, loss
 	}
 
 	drawText(img, fFoot, 56, h-44, colGrid, "LUNAR BOT  •  PERFIL")
+	return encodePNG(img)
+}
+
+func renderCasamentoCard(rootDir, leftName, rightName string, pct int, leftAv, rightAv []byte) ([]byte, error) {
+	bgPath := filepath.Join(rootDir, "assets", "casamento-bg.png")
+	rawBG, err := os.ReadFile(bgPath)
+	if err != nil {
+		return renderVersusCard("CASAMENTO", "FELICIDADES AOS NOIVOS!", leftName, rightName, fmt.Sprintf("%d%%", pct), "Casamento oficializado!", leftAv, rightAv, colRose)
+	}
+	srcBG, _, err := image.Decode(bytes.NewReader(rawBG))
+	if err != nil {
+		return renderVersusCard("CASAMENTO", "FELICIDADES AOS NOIVOS!", leftName, rightName, fmt.Sprintf("%d%%", pct), "Casamento oficializado!", leftAv, rightAv, colRose)
+	}
+
+	b := srcBG.Bounds()
+	w, h := b.Dx(), b.Dy()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(img, img.Bounds(), srcBG, b.Min, draw.Src)
+
+	colNeon := color.RGBA{255, 46, 126, 255}
+	colSoft := color.RGBA{251, 207, 232, 255}
+
+	fTag := makeFace(true, 18)
+	fTitle := makeFace(true, 30)
+	fPct := makeFace(true, 60)
+	fName := makeFace(true, 21)
+	fBox1 := makeFace(true, 23)
+	fBox2 := makeFace(false, 20)
+	defer func() {
+		for _, f := range []font.Face{fTag, fTitle, fPct, fName, fBox1, fBox2} {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
+
+	fillRoundedRect(img, 240, 44, 175, 34, 15, colNeon)
+	drawCenteredText(img, fTag, 327, 67, colText, "CASAMENTO")
+	drawText(img, fTitle, 434, 71, colText, "COMPATIBILIDADE")
+
+	// Circular avatars with neon pink ring
+	drawCircleRing(img, 280, 204, 70, 5, colNeon)
+	drawCircularAvatar(img, leftAv, 280, 204, 66, "1", colNeon)
+	drawCenteredText(img, fName, 280, 304, colText, stripEmojiForFont(leftName))
+
+	drawCircleRing(img, w-280, 204, 70, 5, colNeon)
+	drawCircularAvatar(img, rightAv, w-280, 204, 66, "2", colNeon)
+	drawCenteredText(img, fName, w-280, 304, colText, stripEmojiForFont(rightName))
+
+	// Center percentage + hearts
+	drawHeart(img, w/2-115, 202, 11, colNeon)
+	drawCenteredText(img, fPct, w/2, 224, colNeon, fmt.Sprintf("%d%%", pct))
+	drawHeart(img, w/2+115, 202, 11, colNeon)
+
+	// Bottom text box overlay
+	drawCenteredText(img, fBox1, w/2, 396, colText, fmt.Sprintf("Casamento oficializado com %d%% de compatibilidade!", pct))
+	drawCenteredText(img, fBox2, w/2, 434, colSoft, "Com amor, respeito e parceria, felicidades aos noivos!")
 	return encodePNG(img)
 }
 

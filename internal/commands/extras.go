@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -186,13 +188,19 @@ func registerExtras(r *Registry) {
 			_ = ctx.DB.SaveUser(u1)
 			_ = ctx.DB.SaveUser(u2)
 			fromJID, _ := types.ParseJID(from)
-			img, err := renderVersusCard("CASAMENTO", "FELICIDADES AOS NOIVOS!", "@"+fromJID.User, "@"+senderPN.User, "100%", "Casamento oficializado!", fetchAvatar(ctx, fromJID), fetchAvatar(ctx, senderPN), colRose)
+			img, err := renderCasamentoCard(ctx.Config.RootDir, "@"+fromJID.User, "@"+senderPN.User, 100, fetchAvatar(ctx, fromJID), fetchAvatar(ctx, senderPN))
 			cap := fmt.Sprintf("💖 *FELICIDADES AOS NOIVOS!*\n%s & %s oficializaram o casamento! 💍", mentionTag(fromJID), mentionTag(senderPN))
-			return sendCard(ctx, img, err, cap, from, senderPN.String())
+			if err := sendCard(ctx, img, err, cap, from, senderPN.String()); err != nil {
+				return err
+			}
+			if mp3, err := os.ReadFile(filepath.Join(ctx.Config.RootDir, "assets", "casamento.mp3")); err == nil && len(mp3) > 0 {
+				_ = ctx.SendAudio(mp3, false)
+			}
+			return nil
 		},
 	})
 	r.Register(&Command{
-		Name: "divorcio", Category: "resenha", Description: "Encerra o casamento atual",
+		Name: "divorcio", Aliases: []string{"divórcio", "separar"}, Category: "resenha", Description: "Encerra o casamento atual",
 		Execute: func(ctx *Context) error {
 			u := ctx.DB.GetUser(ctx.Sender.String())
 			if u.Spouse == "" {
