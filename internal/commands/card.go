@@ -815,7 +815,7 @@ func renderVersusCard(tag, title, leftName, rightName, centerBadge, footerText s
 	return encodePNG(img)
 }
 
-func renderTextStickerFrames(text string, fg color.RGBA) ([][]byte, error) {
+func renderTextStickerFrames(text string, bg, fg color.RGBA) ([][]byte, error) {
 	const size = 512
 	f := makeFace(true, 58)
 	if f == nil {
@@ -862,6 +862,7 @@ func renderTextStickerFrames(text string, fg color.RGBA) ([][]byte, error) {
 	var frames [][]byte
 	for _, limit := range counts {
 		img := image.NewRGBA(image.Rect(0, 0, size, size))
+		fillRoundedRect(img, 12, 12, size-24, size-24, 56, bg)
 		rem := limit
 		y := startY
 		for i, lr := range lineRunes {

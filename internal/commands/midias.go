@@ -745,8 +745,9 @@ func registerMidias(r *Registry) {
 				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.sticktexto Aaaaaa`")
 			}
 			ctx.React("✨")
-			fg := color.RGBA{0x56, 0x82, 0x03, 255} // #568203
-			frames, err := renderTextStickerFrames(ctx.Q, fg)
+			bg := color.RGBA{0x56, 0x82, 0x03, 255} // #568203
+			fg := color.RGBA{255, 255, 255, 255}
+			frames, err := renderTextStickerFrames(ctx.Q, bg, fg)
 			if err != nil || len(frames) == 0 {
 				return ctx.Reply("❌ Erro ao gerar texto.")
 			}
