@@ -390,23 +390,20 @@ func registerAdmin(r *Registry) {
 
 	r.Register(&Command{
 		Name: "marcar", Category: "admin", Admin: true, OnlyGroup: true,
-		Description: "Marca todos os membros visivelmente",
+		Description: "Marca todos os membros com @todos",
 		Execute: func(ctx *Context) error {
 			if ctx.GroupInfo == nil {
 				return ctx.Reply("❌ Sem metadados do grupo.")
 			}
-			var sb strings.Builder
+			msg := "📢 @todos"
 			if ctx.Q != "" {
-				sb.WriteString(ctx.Q + "\n\n")
-			} else {
-				sb.WriteString("📢 *Chamada Geral:*\n\n")
+				msg = "📢 @todos " + ctx.Q
 			}
 			mentions := make([]string, 0, len(ctx.GroupInfo.Participants))
 			for _, p := range ctx.GroupInfo.Participants {
 				mentions = append(mentions, p.JID.String())
-				sb.WriteString(fmt.Sprintf("• %s\n", mentionTag(p.JID)))
 			}
-			return ctx.Bot.SendText(ctx.From, sb.String(), mentions...)
+			return ctx.Bot.SendText(ctx.From, msg, mentions...)
 		},
 	})
 
