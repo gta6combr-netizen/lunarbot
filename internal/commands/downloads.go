@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,93 +28,52 @@ func fetchYouTubeMeta(videoID string) ytMeta {
 		ThumbURL: fmt.Sprintf("https://i.ytimg.com/vi/%s/hqdefault.jpg", videoID),
 	}
 
-	// 1. Try watch page ytInitialPlayerResponse for full description & duration
-	watchURL := "https://www.youtube.com/watch?v=" + url.QueryEscape(videoID)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, watchURL, nil)
-	if err == nil {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
-		if resp, err := httpClient.Do(req); err == nil {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-			resp.Body.Close()
-			s := string(body)
-			const marker = "var ytInitialPlayerResponse = "
-			if idx := strings.Index(s, marker); idx != -1 {
-				rest := s[idx+len(marker):]
-				if end := strings.Index(rest, ";</script>"); end != -1 {
-					var pr struct {
-						VideoDetails struct {
-							Title            string `json:"title"`
-							Author           string `json:"author"`
-							LengthSeconds    string `json:"lengthSeconds"`
-							ShortDescription string `json:"shortDescription"`
-						} `json:"videoDetails"`
-					}
-					if json.Unmarshal([]byte(rest[:end]), &pr) == nil {
-						meta.Title = pr.VideoDetails.Title
-						meta.Author = pr.VideoDetails.Author
-						meta.Description = pr.VideoDetails.ShortDescription
-						if sec, err := strconv.Atoi(pr.VideoDetails.LengthSeconds); err == nil && sec > 0 {
-							meta.Duration = fmt.Sprintf("%d:%02d", sec/60, sec%60)
-						}
-					}
-				}
-			}
+	// 1. Fast oEmbed for title & author (~150ms)
+	var oe struct {
+		Title      string `json:"title"`
+		AuthorName string `json:"author_name"`
+		ThumbURL   string `json:"thumbnail_url"`
+	}
+	if err := httpGetJSON("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+url.QueryEscape(videoID)+"&format=json", &oe); err == nil {
+		meta.Title = oe.Title
+		meta.Author = oe.AuthorName
+		if oe.ThumbURL != "" {
+			meta.ThumbURL = oe.ThumbURL
 		}
 	}
 
-	// 2. Fallback to youtubei/v1/player (works on datacenter IPs like Render)
-	if meta.Description == "" || meta.Duration == "" {
-		ytBody := map[string]any{
-			"videoId": videoID,
-			"context": map[string]any{
-				"client": map[string]any{
-					"clientName":    "ANDROID",
-					"clientVersion": "19.09.37",
-					"hl":            "pt",
-					"gl":            "BR",
-				},
+	// 2. Fast youtubei/v1/player for duration & description
+	ytBody := map[string]any{
+		"videoId": videoID,
+		"context": map[string]any{
+			"client": map[string]any{
+				"clientName":    "ANDROID",
+				"clientVersion": "19.09.37",
+				"hl":            "pt",
+				"gl":            "BR",
 			},
-		}
-		var pr struct {
-			VideoDetails struct {
-				Title            string `json:"title"`
-				Author           string `json:"author"`
-				LengthSeconds    string `json:"lengthSeconds"`
-				ShortDescription string `json:"shortDescription"`
-			} `json:"videoDetails"`
-		}
-		if httpPostJSON("https://www.youtube.com/youtubei/v1/player", ytBody, nil, &pr) == nil {
-			if meta.Title == "" {
-				meta.Title = pr.VideoDetails.Title
-			}
-			if meta.Author == "" {
-				meta.Author = pr.VideoDetails.Author
-			}
-			if meta.Description == "" {
-				meta.Description = pr.VideoDetails.ShortDescription
-			}
-			if meta.Duration == "" {
-				if sec, err := strconv.Atoi(pr.VideoDetails.LengthSeconds); err == nil && sec > 0 {
-					meta.Duration = fmt.Sprintf("%d:%02d", sec/60, sec%60)
-				}
-			}
-		}
+		},
 	}
-
-	// 3. Fallback to oEmbed if title missing
-	if meta.Title == "" {
-		var oe struct {
-			Title      string `json:"title"`
-			AuthorName string `json:"author_name"`
-			ThumbURL   string `json:"thumbnail_url"`
+	var pr struct {
+		VideoDetails struct {
+			Title            string `json:"title"`
+			Author           string `json:"author"`
+			LengthSeconds    string `json:"lengthSeconds"`
+			ShortDescription string `json:"shortDescription"`
+		} `json:"videoDetails"`
+	}
+	if httpPostJSON("https://www.youtube.com/youtubei/v1/player", ytBody, nil, &pr) == nil {
+		if meta.Title == "" {
+			meta.Title = pr.VideoDetails.Title
 		}
-		if err := httpGetJSON("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+url.QueryEscape(videoID)+"&format=json", &oe); err == nil {
-			meta.Title = oe.Title
-			meta.Author = oe.AuthorName
-			if oe.ThumbURL != "" {
-				meta.ThumbURL = oe.ThumbURL
-			}
+		if meta.Author == "" {
+			meta.Author = pr.VideoDetails.Author
+		}
+		if pr.VideoDetails.ShortDescription != "" {
+			meta.Description = pr.VideoDetails.ShortDescription
+		}
+		if sec, err := strconv.Atoi(pr.VideoDetails.LengthSeconds); err == nil && sec > 0 {
+			meta.Duration = fmt.Sprintf("%d:%02d", sec/60, sec%60)
 		}
 	}
 
@@ -212,10 +170,23 @@ func registerDownloads(r *Registry) {
 				return ctx.Reply("❗ Informe o nome da música ou link.")
 			}
 			ctx.React("🎵")
-			_ = ctx.Reply("🔎 *Etapa 1/3:* Buscando vídeo no YouTube...")
 
 			vid, err := extractOrSearchYouTubeID(ctx.Q)
 			if err == nil && vid != "" {
+				type audioRes struct {
+					data []byte
+					err  error
+				}
+				audioCh := make(chan audioRes, 1)
+				if ctx.Config.RapidAPIKey != "" {
+					go func() {
+						d, e := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid)
+						audioCh <- audioRes{d, e}
+					}()
+				} else {
+					audioCh <- audioRes{nil, fmt.Errorf("no rapidapi key")}
+				}
+
 				meta := fetchYouTubeMeta(vid)
 				thumb, _ := httpGetBytes(meta.ThumbURL)
 				ytURL := "https://youtu.be/" + vid
@@ -239,18 +210,12 @@ func registerDownloads(r *Registry) {
 					_ = ctx.Reply(capSB.String())
 				}
 
-				if ctx.Config.RapidAPIKey != "" {
-					_ = ctx.Reply("⬇️ *Etapa 2/3:* Baixando faixa de áudio...")
-					data, err := downloadRapidAPIMP3(ctx.Config.RapidAPIKey, vid)
-					if err == nil {
-						_ = ctx.Reply("🎧 *Etapa 3/3:* Áudio extraído! Enviando MP3...")
-						return ctx.SendAudio(data, false)
-					}
-					_ = ctx.Reply(fmt.Sprintf("⚠️ RapidAPI falhou (%v), tentando yt-dlp...", err))
+				res := <-audioCh
+				if res.err == nil && len(res.data) > 0 {
+					return ctx.SendAudio(res.data, false)
 				}
 			}
 
-			_ = ctx.Reply("⬇️ *Etapa 2/3:* Baixando e extraindo áudio via yt-dlp...")
 			query := ctx.Q
 			if !strings.HasPrefix(query, "http") {
 				query = "ytsearch1:" + query
