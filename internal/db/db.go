@@ -168,6 +168,10 @@ func (d *DB) migrate() error {
 			expires_at BIGINT DEFAULT 0,
 			activated_by TEXT DEFAULT ''
 		);`,
+		`CREATE TABLE IF NOT EXISTS bot_settings (
+			k TEXT PRIMARY KEY,
+			v TEXT NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS boas_vindas (
 			group_id TEXT PRIMARY KEY,
 			ativo INTEGER DEFAULT 0
@@ -504,22 +508,70 @@ func (d *DB) SetGroupPrefix(groupID, prefix string) error {
 }
 
 // Active Groups (Aluguel)
-func (d *DB) IsGroupActive(groupID string) bool {
+type ActiveGroupInfo struct {
+	GroupID     string
+	ExpiresAt   int64
+	ActivatedBy string
+}
+
+func (d *DB) IsRentalRequired() bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	var exp int64
-	err := d.queryRow(`SELECT expires_at FROM active_groups WHERE group_id = ?`, groupID).Scan(&exp)
-	if err == sql.ErrNoRows {
-		// Fallback seguro igual ao original: se não existe no banco, permite
+	var v string
+	err := d.queryRow(`SELECT v FROM bot_settings WHERE k = 'rental_required'`).Scan(&v)
+	if err == sql.ErrNoRows || err != nil {
 		return true
 	}
+	return v != "0"
+}
+
+func (d *DB) SetRentalRequired(on bool) error {
+	val := "0"
+	if on {
+		val = "1"
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.exec(`INSERT INTO bot_settings (k, v) VALUES ('rental_required', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`, val)
+	return err
+}
+
+func (d *DB) IsGroupActive(groupID string) bool {
+	d.mu.RLock()
+	var exp int64
+	err := d.queryRow(`SELECT expires_at FROM active_groups WHERE group_id = ?`, groupID).Scan(&exp)
+	d.mu.RUnlock()
+	if err == sql.ErrNoRows {
+		return !d.IsRentalRequired()
+	}
 	if err != nil {
-		return true
+		return false
 	}
 	if exp == 0 {
 		return true
 	}
 	return exp > time.Now().UnixMilli()
+}
+
+func (d *DB) ListActiveGroups() []ActiveGroupInfo {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.query(`SELECT group_id, expires_at, activated_by FROM active_groups`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	now := time.Now().UnixMilli()
+	var out []ActiveGroupInfo
+	for rows.Next() {
+		var g ActiveGroupInfo
+		if rows.Scan(&g.GroupID, &g.ExpiresAt, &g.ActivatedBy) == nil {
+			if g.ExpiresAt == 0 || g.ExpiresAt > now {
+				out = append(out, g)
+			}
+		}
+	}
+	return out
 }
 
 func (d *DB) GetGroupExpiry(groupID string) (exists bool, expiresAt int64) {

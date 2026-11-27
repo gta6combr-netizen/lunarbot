@@ -335,6 +335,9 @@ func (c *Client) handleMessage(evt *events.Message) {
 			c.db.AddXP(permSender.String(), c.cfg.Moeda.XpPorMensagem, c.cfg.Niveis.XpBase, c.cfg.Niveis.Multiplicador)
 		}
 		if c.isLunarTriggered(evt, body) {
+			if isGroup && !isDono && !isVip && !c.db.IsGroupActive(chat.String()) {
+				return
+			}
 			if cmdName, args, q, ok := c.parseNaturalCommand(body); ok {
 				if cmd := c.registry.Get(cmdName); cmd != nil {
 					c.executeCommand(evt, cmd, chat, permSender, isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip, groupInfo, groupName, prefix, cmdName, args, q, body)
@@ -414,7 +417,7 @@ func (c *Client) executeCommand(
 		allowAlways := map[string]bool{
 			"dono": true, "quemdono": true, "meuid": true, "ping": true,
 			"menu": true, "ajuda": true, "help": true, "commands": true,
-			"comandos": true, "cantada": true, "ativar_grupo": true,
+			"comandos": true, "aluguel": true, "ativar_grupo": true,
 		}
 		if !allowAlways[cmd.Name] && !c.db.IsGroupActive(chat.String()) {
 			_ = ctx.Reply(fmt.Sprintf("⛔ *Bot não ativo neste grupo.*\nPeça ao dono para ativar com *%sativar_grupo*.", prefix))

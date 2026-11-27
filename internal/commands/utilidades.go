@@ -240,6 +240,9 @@ func registerUtilidades(r *Registry) {
 		Execute: func(ctx *Context) error {
 			exists, exp := ctx.DB.GetGroupExpiry(ctx.From.String())
 			if !exists {
+				if ctx.DB.IsRentalRequired() {
+					return ctx.Reply(fmt.Sprintf("⛔ *Grupo não ativado.*\nPeça ao dono (%s) para ativar com *%salugar <dias>*.", ctx.Config.NomeDoDono, ctx.Prefix))
+				}
 				return ctx.Reply("✅ Grupo sem restrição de aluguel.")
 			}
 			if exp == 0 {

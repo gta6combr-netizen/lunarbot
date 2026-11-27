@@ -546,8 +546,8 @@ func registerAdmin(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "ativar_grupo", Aliases: []string{"reativar"}, Category: "admin", Dono: true, OnlyGroup: true,
-		Description: "Ativa o bot no grupo por N dias (padrão 30)",
+		Name: "ativar_grupo", Aliases: []string{"reativar", "alugar"}, Category: "admin", Dono: true, OnlyGroup: true,
+		Description: "Ativa/aluga o bot no grupo por N dias (padrão 30, 0 = permanente)",
 		Execute: func(ctx *Context) error {
 			days := 30
 			if len(ctx.Args) > 0 {
@@ -556,16 +556,53 @@ func registerAdmin(r *Registry) {
 				}
 			}
 			_ = ctx.DB.ActivateGroup(ctx.From.String(), days, ctx.Sender.String())
+			if days == 0 {
+				return ctx.Reply(fmt.Sprintf("✅ Grupo *%s* ativado *permanentemente*!", ctx.GroupName))
+			}
 			return ctx.Reply(fmt.Sprintf("✅ Grupo *%s* ativado por *%d dias*!", ctx.GroupName, days))
 		},
 	})
 
 	r.Register(&Command{
-		Name: "desativar_grupo", Category: "admin", Dono: true, OnlyGroup: true,
-		Description: "Desativa o bot neste grupo",
+		Name: "desativar_grupo", Aliases: []string{"desalugar"}, Category: "admin", Dono: true, OnlyGroup: true,
+		Description: "Desativa o aluguel do bot neste grupo",
 		Execute: func(ctx *Context) error {
 			_ = ctx.DB.DeactivateGroup(ctx.From.String())
 			return ctx.Reply("⛔ Bot desativado neste grupo.")
+		},
+	})
+
+	r.Register(&Command{
+		Name: "modoaluguel", Category: "admin", Dono: true,
+		Description: "Liga/desliga a exigência de aluguel em grupos",
+		Execute: func(ctx *Context) error {
+			next := !ctx.DB.IsRentalRequired()
+			_ = ctx.DB.SetRentalRequired(next)
+			if next {
+				return ctx.Reply("🔒 *Modo Aluguel:* ✅ Ativado (novos grupos precisam de `.alugar` / `.ativar_grupo`).")
+			}
+			return ctx.Reply("🔓 *Modo Aluguel:* ❌ Desativado (grupos liberados sem aluguel).")
+		},
+	})
+
+	r.Register(&Command{
+		Name: "listalugueis", Aliases: []string{"alugueis"}, Category: "admin", Dono: true,
+		Description: "Lista os grupos com aluguel ativo",
+		Execute: func(ctx *Context) error {
+			list := ctx.DB.ListActiveGroups()
+			if len(list) == 0 {
+				return ctx.Reply("📭 Nenhum grupo com aluguel ativo no momento.")
+			}
+			var sb strings.Builder
+			sb.WriteString("📋 *GRUPOS ALUGADOS ATIVOS:*\n\n")
+			for i, g := range list {
+				exp := "Permanente"
+				if g.ExpiresAt > 0 {
+					exp = time.UnixMilli(g.ExpiresAt).Format("02/01/2006")
+				}
+				sb.WriteString(fmt.Sprintf("%d. `%s` — até *%s*\n", i+1, g.GroupID, exp))
+			}
+			return ctx.Reply(sb.String())
 		},
 	})
 
