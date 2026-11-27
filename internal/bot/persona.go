@@ -31,10 +31,10 @@ import (
 var lunarMentionRE = regexp.MustCompile(`(?i)\b(l[uv]n?[a40@*]r(\s*bot)?|lu[0o@]ar)\b`)
 
 var (
-	personaHTTP = &http.Client{Timeout: 6 * time.Second}
+	personaHTTP = &http.Client{Timeout: 20 * time.Second}
 	lunarModels = []string{
 		"gemini-3-flash-preview",
-		"gemini-3-flash-preview",
+		"gemini-2.5-flash",
 	}
 )
 
@@ -68,7 +68,7 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 			return true
 		}
 		u := unwrapMsg(evt.Message)
-		return u != nil && (u.ImageMessage != nil || u.StickerMessage != nil || u.AudioMessage != nil)
+		return u != nil && (u.ImageMessage != nil || u.StickerMessage != nil || u.AudioMessage != nil || u.VideoMessage != nil)
 	}
 	if body != "" && lunarMentionRE.MatchString(body) {
 		return true
@@ -182,12 +182,16 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 	}
 
 	// 2. Natural Portuguese intents
+	wantsMakeSticker := strings.Contains(lower, "faz") || strings.Contains(lower, "fazer") ||
+		strings.Contains(lower, "cria") || strings.Contains(lower, "criar") ||
+		strings.Contains(lower, "transforma") || strings.Contains(lower, "converte") ||
+		strings.Contains(lower, "vira")
 	switch {
-	case strings.Contains(lower, "figurinha") && (strings.Contains(lower, "audio") || strings.Contains(lower, "áudio")):
+	case wantsMakeSticker && strings.Contains(lower, "figurinha") && (strings.Contains(lower, "audio") || strings.Contains(lower, "áudio")):
 		return "figaudio", rawFields, rawAfterLunar, true
-	case strings.Contains(lower, "figurinha") && (strings.Contains(lower, "circulo") || strings.Contains(lower, "círculo") || strings.Contains(lower, "redonda")):
+	case wantsMakeSticker && strings.Contains(lower, "figurinha") && (strings.Contains(lower, "circulo") || strings.Contains(lower, "círculo") || strings.Contains(lower, "redonda")):
 		return "stickercirculo", rawFields, rawAfterLunar, true
-	case strings.Contains(lower, "figurinha") || strings.Contains(lower, "sticker"):
+	case wantsMakeSticker && (strings.Contains(lower, "figurinha") || strings.Contains(lower, "sticker")):
 		return "sticker", rawFields, rawAfterLunar, true
 	case strings.Contains(lower, "menu") || strings.Contains(lower, "comandos") || strings.Contains(lower, "lista de comandos"):
 		return "menu", nil, "", true
@@ -274,6 +278,26 @@ func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
 					return u.StickerMessage.PngThumbnail, "image/png"
 				}
 				return webp, "image/webp"
+			}
+		}
+		if u.VideoMessage != nil {
+			if vid, err := c.wa.Download(context.Background(), u.VideoMessage); err == nil && len(vid) > 0 {
+				id := fmt.Sprintf("%d", time.Now().UnixNano())
+				inPath := filepath.Join(c.cfg.RootDir, "temp", "vis_"+id+".mp4")
+				outPath := filepath.Join(c.cfg.RootDir, "temp", "vis_"+id+".jpg")
+				defer os.Remove(inPath)
+				defer os.Remove(outPath)
+				if os.WriteFile(inPath, vid, 0644) == nil {
+					cmd := exec.Command("ffmpeg", "-y", "-i", inPath, "-frames:v", "1", outPath)
+					if cmd.Run() == nil {
+						if jpg, err := os.ReadFile(outPath); err == nil && len(jpg) > 0 {
+							return jpg, "image/jpeg"
+						}
+					}
+				}
+			}
+			if len(u.VideoMessage.JPEGThumbnail) > 0 {
+				return u.VideoMessage.JPEGThumbnail, "image/jpeg"
 			}
 		}
 		return nil, ""
