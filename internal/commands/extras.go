@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.mau.fi/whatsmeow/types"
 )
 
 func registerExtras(r *Registry) {
@@ -132,35 +134,61 @@ func registerExtras(r *Registry) {
 		Name: "casar", Category: "resenha", Description: "Pede alguém em casamento",
 		Execute: func(ctx *Context) error {
 			target := resolveTarget(ctx)
-			if target.IsEmpty() || target == ctx.Sender {
+			if target.IsEmpty() {
 				return ctx.Reply("❗ Marque outra pessoa para pedir em casamento.")
 			}
-			u1 := ctx.DB.GetUser(ctx.Sender.String())
+			senderPN := ctx.Bot.ResolvePN(ctx.Sender).ToNonAD()
+			targetPN := ctx.Bot.ResolvePN(target).ToNonAD()
+			if senderPN.String() == targetPN.String() {
+				return ctx.Reply("❗ Marque outra pessoa para pedir em casamento.")
+			}
+			u1 := ctx.DB.GetUser(senderPN.String())
 			if u1.Spouse != "" {
 				return ctx.Reply("💍 Você já está casado(a)!")
 			}
-			_ = ctx.DB.SetProposal(ctx.Sender.String(), target.String())
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💍 %s pediu %s em casamento!\nUse *%saceitar* para aceitar.", mentionTag(ctx.Sender), mentionTag(target), ctx.Prefix), ctx.Sender.String(), target.String())
+			_ = ctx.DB.SetProposal(senderPN.String(), targetPN.String())
+			if targetPN.User != target.User {
+				_ = ctx.DB.SetProposal(senderPN.String(), target.ToNonAD().String())
+			}
+			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💍 %s pediu %s em casamento!\nUse *%saceitar* para aceitar.", mentionTag(senderPN), mentionTag(targetPN), ctx.Prefix), senderPN.String(), targetPN.String())
 		},
 	})
 	r.Register(&Command{
 		Name: "aceitar", Category: "resenha", Description: "Aceita pedido de casamento",
 		Execute: func(ctx *Context) error {
-			from := ctx.DB.GetProposal(ctx.Sender.String())
+			senderPN := ctx.Bot.ResolvePN(ctx.Sender).ToNonAD()
+			candidates := []string{senderPN.String(), ctx.Sender.ToNonAD().String()}
+			if ctx.Event != nil {
+				candidates = append(candidates, ctx.Event.Info.Sender.ToNonAD().String())
+			}
+			var from, matchedKey string
+			for _, k := range candidates {
+				if f := ctx.DB.GetProposal(k); f != "" {
+					from = f
+					matchedKey = k
+					break
+				}
+			}
 			if from == "" {
 				return ctx.Reply("❌ Você não tem pedidos pendentes.")
 			}
-			_ = ctx.DB.ClearProposal(ctx.Sender.String())
+			for _, k := range candidates {
+				_ = ctx.DB.ClearProposal(k)
+			}
+			_ = matchedKey
 			now := time.Now().UnixMilli()
 			u1 := ctx.DB.GetUser(from)
-			u2 := ctx.DB.GetUser(ctx.Sender.String())
-			u1.Spouse = ctx.Sender.String()
+			u2 := ctx.DB.GetUser(senderPN.String())
+			u1.Spouse = senderPN.String()
 			u1.MarriedAt = now
 			u2.Spouse = from
 			u2.MarriedAt = now
 			_ = ctx.DB.SaveUser(u1)
 			_ = ctx.DB.SaveUser(u2)
-			return ctx.Reply("💖 *FELICIDADES AOS NOIVOS!* Casamento oficializado!")
+			fromJID, _ := types.ParseJID(from)
+			img, err := renderVersusCard("CASAMENTO", "FELICIDADES AOS NOIVOS!", "@"+fromJID.User, "@"+senderPN.User, "100%", "Casamento oficializado!", fetchAvatar(ctx, fromJID), fetchAvatar(ctx, senderPN), colRose)
+			cap := fmt.Sprintf("💖 *FELICIDADES AOS NOIVOS!*\n%s & %s oficializaram o casamento! 💍", mentionTag(fromJID), mentionTag(senderPN))
+			return sendCard(ctx, img, err, cap, from, senderPN.String())
 		},
 	})
 	r.Register(&Command{
