@@ -458,7 +458,26 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	if reply != "" {
-		_ = c.ReplyText(evt, reply)
+		var replyMentions []string
+		if ci := getMsgContextInfo(evt.Message); ci != nil {
+			var botUser, botLID string
+			if c.wa.Store.ID != nil {
+				botUser = c.wa.Store.ID.User
+			}
+			if !c.wa.Store.LID.IsEmpty() {
+				botLID = c.wa.Store.LID.User
+			}
+			for _, m := range ci.MentionedJID {
+				if j, err := types.ParseJID(m); err == nil {
+					u := j.ToNonAD().User
+					if (botUser != "" && u == botUser) || (botLID != "" && u == botLID) {
+						continue
+					}
+					replyMentions = append(replyMentions, m)
+				}
+			}
+		}
+		_ = c.ReplyTextMentions(evt, reply, replyMentions...)
 	}
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
 	return aiCmd, aiArgs, aiQ

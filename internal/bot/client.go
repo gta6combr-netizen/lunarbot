@@ -249,10 +249,18 @@ func (c *Client) quotedContext(evt *events.Message, mentions []string) *waE2E.Co
 }
 
 func (c *Client) ReplyText(evt *events.Message, text string) error {
+	return c.ReplyTextMentions(evt, text)
+}
+
+func (c *Client) ReplyTextMentions(evt *events.Message, text string, mentions ...string) error {
+	ci := c.quotedContext(evt, nil)
+	if len(mentions) > 0 {
+		ci.MentionedJID = mentions
+	}
 	_, err := c.wa.SendMessage(context.Background(), evt.Info.Chat, &waE2E.Message{
 		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 			Text:        proto.String(text),
-			ContextInfo: c.quotedContext(evt, nil),
+			ContextInfo: ci,
 		},
 	})
 	return err
