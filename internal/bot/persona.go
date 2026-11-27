@@ -35,6 +35,7 @@ var (
 	lunarModels = []string{
 		"gemini-3-flash-preview",
 		"gemini-2.5-flash",
+		"gemini-2.5-flash-lite",
 	}
 )
 
@@ -366,6 +367,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 			return "", nil, ""
 		}
 	}
+	rawBody := body
 	if quoted := extractQuotedBody(evt); quoted != "" {
 		if len(quoted) > 250 {
 			quoted = quoted[:250] + "..."
@@ -407,7 +409,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	if reply == "" {
-		reply = lunarFallbackReply(senderName, body, isDono, c.cfg.NomeDoDono)
+		reply = lunarFallbackReply(senderName, rawBody, isDono, c.cfg.NomeDoDono)
 	}
 
 	// Save any [MEM:fact] emitted by AI to persistent Postgres/SQLite memory
@@ -744,9 +746,6 @@ func (c *Client) askLunarGemini(chatID, senderJID, senderName, body string, isDo
 		"generationConfig": map[string]any{
 			"temperature":     0.85,
 			"maxOutputTokens": 1024,
-			"thinkingConfig": map[string]any{
-				"thinkingBudget": 0,
-			},
 		},
 	}
 
