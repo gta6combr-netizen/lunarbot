@@ -160,6 +160,9 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 				return "baixar", []string{u}, u, true
 			}
 		}
+		if strings.Contains(lower, "baixa") || strings.Contains(lower, "download") || strings.Contains(lower, "salva") {
+			return "baixar", []string{urls[0]}, urls[0], true
+		}
 	}
 
 	rawAfterLunar := strings.TrimSpace(lunarMentionRE.ReplaceAllString(body, " "))
