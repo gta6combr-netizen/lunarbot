@@ -136,9 +136,29 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 		return "", nil, "", false
 	}
 
-	// Preserve @mentions in args for commands that target users
-	// Direct social media link download in natural language (e.g. "baixa https://vm.tiktok.com/...")
+	wantsMakeSticker := strings.Contains(lower, "faz") || strings.Contains(lower, "fazer") ||
+		strings.Contains(lower, "cria") || strings.Contains(lower, "criar") ||
+		strings.Contains(lower, "transforma") || strings.Contains(lower, "converte") ||
+		strings.Contains(lower, "vira")
+
+	// Direct social media link download in natural language (unless user asked for figaudio/sticker)
 	if urls := socialURLRE.FindAllString(body, -1); len(urls) > 0 {
+		var cleanURL string
+		for _, u := range urls {
+			if !strings.Contains(strings.ToLower(u), "/tiktoklite") {
+				cleanURL = u
+				break
+			}
+		}
+		if cleanURL == "" {
+			cleanURL = urls[0]
+		}
+		if wantsMakeSticker && strings.Contains(lower, "figurinha") && (strings.Contains(lower, "audio") || strings.Contains(lower, "áudio")) {
+			return "figaudio", []string{cleanURL}, cleanURL, true
+		}
+		if wantsMakeSticker && (strings.Contains(lower, "figurinha") || strings.Contains(lower, "sticker")) {
+			return "sticker", []string{cleanURL}, cleanURL, true
+		}
 		for _, u := range urls {
 			ul := strings.ToLower(u)
 			if strings.Contains(ul, "/tiktoklite") {
@@ -183,10 +203,6 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 	}
 
 	// 2. Natural Portuguese intents
-	wantsMakeSticker := strings.Contains(lower, "faz") || strings.Contains(lower, "fazer") ||
-		strings.Contains(lower, "cria") || strings.Contains(lower, "criar") ||
-		strings.Contains(lower, "transforma") || strings.Contains(lower, "converte") ||
-		strings.Contains(lower, "vira")
 	isExplain := strings.Contains(lower, "explica") || strings.Contains(lower, "oq é") ||
 		strings.Contains(lower, "oq e") || strings.Contains(lower, "o que é") ||
 		strings.Contains(lower, "o que e") || strings.Contains(lower, "pra que serve") ||
