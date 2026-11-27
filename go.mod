@@ -9,6 +9,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20261126154439-c2ce5c339ae0
+	golang.org/x/image v0.48.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.63.0
 )

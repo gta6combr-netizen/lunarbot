@@ -149,7 +149,9 @@ func registerResenha(r *Registry) {
 				}
 				pct := randInt(0, 100)
 				bar := strings.Repeat("█", pct/10) + strings.Repeat("░", 10-(pct/10))
-				return ctx.Bot.SendText(ctx.From, fmt.Sprintf("%s %s é *%d%% %s*!\n[%s]", ms.Emoji, mentionTag(target), pct, ms.Label, bar), target.String())
+				cap := fmt.Sprintf("%s %s é *%d%% %s*!\n[%s]", ms.Emoji, mentionTag(target), pct, ms.Label, bar)
+				img, err := renderMeterCard("MEDIDOR: "+strings.ToUpper(ms.Label), "@"+target.User, pct, fmt.Sprintf("%s é %d%% %s!", target.User, pct, ms.Label), colPurple)
+				return sendCard(ctx, img, err, cap, target.String())
 			},
 		})
 	}
@@ -175,7 +177,9 @@ func registerResenha(r *Registry) {
 				heart = "😬"
 				comment = "Meio torto, mas vai que..."
 			}
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("%s *SHIP*\n%s + %s = *%d%%*\n%s", heart, mentionTag(ctx.Sender), mentionTag(t), pct, comment), ctx.Sender.String(), t.String())
+			cap := fmt.Sprintf("%s *SHIP*\n%s + %s = *%d%%*\n%s", heart, mentionTag(ctx.Sender), mentionTag(t), pct, comment)
+			img, err := renderMeterCard("COMPATIBILIDADE (SHIP)", fmt.Sprintf("%s + %s", ctx.Sender.User, t.User), pct, comment, colRose)
+			return sendCard(ctx, img, err, cap, ctx.Sender.String(), t.String())
 		},
 	})
 
@@ -195,7 +199,9 @@ func registerResenha(r *Registry) {
 				"Não, esquece isso.",
 				"Olha... melhor não contar com isso não.",
 			}
-			return ctx.Reply("🎱 " + ans[randInt(0, len(ans)-1)])
+			chosen := ans[randInt(0, len(ans)-1)]
+			img, err := renderGameCard("BOLA 8", ctx.Q, []string{"Resposta: " + chosen}, colPurple)
+			return sendCard(ctx, img, err, "🎱 "+chosen)
 		},
 	})
 
@@ -209,7 +215,9 @@ func registerResenha(r *Registry) {
 				"Me chama de boleto e me paga atenção, vai.",
 				"Você tem mapa? Me perdi feio no seu sorriso.",
 			}
-			return ctx.Reply("💘 " + c[randInt(0, len(c)-1)])
+			chosen := c[randInt(0, len(c)-1)]
+			img, err := renderGameCard("CANTADA", "Modo Xaveco", []string{chosen}, colRose)
+			return sendCard(ctx, img, err, "💘 "+chosen)
 		},
 	})
 
@@ -223,7 +231,9 @@ func registerResenha(r *Registry) {
 				"Qual o seu maior segredo que ninguém aqui desconfia?",
 				"Se tivesse que apagar alguém desse grupo agora, quem seria?",
 			}
-			return ctx.Reply("🔥 *VERDADE:* " + qs[randInt(0, len(qs)-1)])
+			chosen := qs[randInt(0, len(qs)-1)]
+			img, err := renderGameCard("VERDADE", "Responda com sinceridade", []string{chosen}, colAmber)
+			return sendCard(ctx, img, err, "🔥 *VERDADE:* "+chosen)
 		},
 	})
 
@@ -237,7 +247,9 @@ func registerResenha(r *Registry) {
 				"Manda o print da sua última conversa (pode borrar só o nome).",
 				"Fala uma qualidade sincera de quem você menos conversa aqui.",
 			}
-			return ctx.Reply("⚡ *DESAFIO:* " + ds[randInt(0, len(ds)-1)])
+			chosen := ds[randInt(0, len(ds)-1)]
+			img, err := renderGameCard("DESAFIO", "Cumpra agora!", []string{chosen}, colCyan)
+			return sendCard(ctx, img, err, "⚡ *DESAFIO:* "+chosen)
 		},
 	})
 
@@ -253,10 +265,14 @@ func registerResenha(r *Registry) {
 				u.Coins -= loss
 				u.Losses++
 				_ = ctx.DB.SaveUser(u)
-				return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💥 *POW!* %s rodou e levou bala! Perdeu *%d %s* 💀", mentionTag(ctx.Sender), loss, ctx.Config.Moeda.Simbolo), ctx.Sender.String())
+				cap := fmt.Sprintf("💥 *POW!* %s rodou e levou bala! Perdeu *%d %s* 💀", mentionTag(ctx.Sender), loss, ctx.Config.Moeda.Simbolo)
+				img, err := renderGameCard("ROLETA RUSSA", "POW! Levou bala!", []string{fmt.Sprintf("@%s perdeu %d %s", ctx.Sender.User, loss, ctx.Config.Moeda.Simbolo)}, colRose)
+				return sendCard(ctx, img, err, cap, ctx.Sender.String())
 			}
 			ctx.DB.AddCoins(ctx.Sender.String(), 25)
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("🔫 *Click...* %s sobreviveu e ganhou *+25 %s* 😎", mentionTag(ctx.Sender), ctx.Config.Moeda.Simbolo), ctx.Sender.String())
+			cap := fmt.Sprintf("🔫 *Click...* %s sobreviveu e ganhou *+25 %s* 😎", mentionTag(ctx.Sender), ctx.Config.Moeda.Simbolo)
+			img, err := renderGameCard("ROLETA RUSSA", "Click... Sobreviveu!", []string{fmt.Sprintf("@%s ganhou +25 %s", ctx.Sender.User, ctx.Config.Moeda.Simbolo)}, colEmerald)
+			return sendCard(ctx, img, err, cap, ctx.Sender.String())
 		},
 	})
 
@@ -279,7 +295,9 @@ func registerResenha(r *Registry) {
 			uL := ctx.DB.GetUser(loser.String())
 			uL.Losses++
 			_ = ctx.DB.SaveUser(uL)
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("⚔️ *X1 PESADO!*\n%s amassou %s na porrada e levou *+40 %s* 🏆", mentionTag(winner), mentionTag(loser), ctx.Config.Moeda.Simbolo), winner.String(), loser.String())
+			cap := fmt.Sprintf("⚔️ *X1 PESADO!*\n%s amassou %s na porrada e levou *+40 %s* 🏆", mentionTag(winner), mentionTag(loser), ctx.Config.Moeda.Simbolo)
+			img, err := renderGameCard("DUELO X1", fmt.Sprintf("%s venceu!", winner.User), []string{fmt.Sprintf("%s amassou %s e levou +40 %s", winner.User, loser.User, ctx.Config.Moeda.Simbolo)}, colAmber)
+			return sendCard(ctx, img, err, cap, winner.String(), loser.String())
 		},
 	})
 
@@ -302,7 +320,9 @@ func registerResenha(r *Registry) {
 				victim.Coins -= stolen
 				_ = ctx.DB.SaveUser(victim)
 				ctx.DB.AddCoins(ctx.Sender.String(), stolen)
-				return ctx.Bot.SendText(ctx.From, fmt.Sprintf("🥷 %s passou a mão em *%d %s* de %s e saiu correndo!", mentionTag(ctx.Sender), stolen, ctx.Config.Moeda.Simbolo, mentionTag(target)), ctx.Sender.String(), target.String())
+				cap := fmt.Sprintf("🥷 %s passou a mão em *%d %s* de %s e saiu correndo!", mentionTag(ctx.Sender), stolen, ctx.Config.Moeda.Simbolo, mentionTag(target))
+				img, err := renderGameCard("ASSALTO", "Sucesso na fuga!", []string{fmt.Sprintf("%s levou %d %s de %s", ctx.Sender.User, stolen, ctx.Config.Moeda.Simbolo, target.User)}, colEmerald)
+				return sendCard(ctx, img, err, cap, ctx.Sender.String(), target.String())
 			}
 			thief := ctx.DB.GetUser(ctx.Sender.String())
 			fine := int64(25)
@@ -311,7 +331,9 @@ func registerResenha(r *Registry) {
 			}
 			thief.Coins -= fine
 			_ = ctx.DB.SaveUser(thief)
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("🚓 Deu ruim! %s foi pego tentando roubar %s e pagou *%d %s* de multa!", mentionTag(ctx.Sender), mentionTag(target), fine, ctx.Config.Moeda.Simbolo), ctx.Sender.String(), target.String())
+			cap := fmt.Sprintf("🚓 Deu ruim! %s foi pego tentando roubar %s e pagou *%d %s* de multa!", mentionTag(ctx.Sender), mentionTag(target), fine, ctx.Config.Moeda.Simbolo)
+			img, err := renderGameCard("ASSALTO", "Preso em flagrante!", []string{fmt.Sprintf("%s pagou %d %s de multa", ctx.Sender.User, fine, ctx.Config.Moeda.Simbolo)}, colRose)
+			return sendCard(ctx, img, err, cap, ctx.Sender.String(), target.String())
 		},
 	})
 
@@ -326,10 +348,11 @@ func registerResenha(r *Registry) {
 				"fala mais baixo que tua relevância aqui é zero.",
 			}
 			p := ps[randInt(0, len(ps)-1)]
+			img, err := renderGameCard("PATADA", "Toma essa!", []string{p}, colRose)
 			if !target.IsEmpty() {
-				return ctx.Bot.SendText(ctx.From, fmt.Sprintf("🔥 %s, %s", mentionTag(target), p), target.String())
+				return sendCard(ctx, img, err, fmt.Sprintf("🔥 %s, %s", mentionTag(target), p), target.String())
 			}
-			return ctx.Reply("🔥 " + p)
+			return sendCard(ctx, img, err, "🔥 "+p)
 		},
 	})
 
@@ -342,12 +365,23 @@ func registerResenha(r *Registry) {
 			parts := ctx.GroupInfo.Participants
 			p1 := parts[randInt(0, len(parts)-1)].JID
 			p2 := parts[randInt(0, len(parts)-1)].JID
-			fofs := []string{
-				fmt.Sprintf("☕ *PLANTÃO DA LUNAR:* Disseram que %s e %s tão trocando figurinha suspeita no PV 👀", mentionTag(p1), mentionTag(p2)),
-				fmt.Sprintf("🚨 *FOFOCA:* %s falou mal do áudio de %s ontem à noite, eu não deixava!", mentionTag(p1), mentionTag(p2)),
-				fmt.Sprintf("🌙 *BABADO:* Vi %s stalkeando a foto de %s por 20 minutos...", mentionTag(p1), mentionTag(p2)),
+			fofs := []struct{ cap, card string }{
+				{
+					fmt.Sprintf("☕ *PLANTÃO DA LUNAR:* Disseram que %s e %s tão trocando figurinha suspeita no PV 👀", mentionTag(p1), mentionTag(p2)),
+					fmt.Sprintf("Disseram que @%s e @%s tão trocando figurinha suspeita no PV!", p1.User, p2.User),
+				},
+				{
+					fmt.Sprintf("🚨 *FOFOCA:* %s falou mal do áudio de %s ontem à noite, eu não deixava!", mentionTag(p1), mentionTag(p2)),
+					fmt.Sprintf("@%s falou mal do áudio de @%s ontem à noite!", p1.User, p2.User),
+				},
+				{
+					fmt.Sprintf("🌙 *BABADO:* Vi %s stalkeando a foto de %s por 20 minutos...", mentionTag(p1), mentionTag(p2)),
+					fmt.Sprintf("Vi @%s stalkeando a foto de @%s por 20 minutos...", p1.User, p2.User),
+				},
 			}
-			return ctx.Bot.SendText(ctx.From, fofs[randInt(0, len(fofs)-1)], p1.String(), p2.String())
+			pick := fofs[randInt(0, len(fofs)-1)]
+			img, err := renderGameCard("PLANTÃO DA LUNAR", "Fofoca Quente", []string{pick.card}, colPurple)
+			return sendCard(ctx, img, err, pick.cap, p1.String(), p2.String())
 		},
 	})
 
@@ -358,7 +392,9 @@ func registerResenha(r *Registry) {
 				return ctx.Reply("❌ Sem participantes.")
 			}
 			p := ctx.GroupInfo.Participants[randInt(0, len(ctx.GroupInfo.Participants)-1)].JID
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("🐍 Alerta de talarico! Todo mundo escondendo o(a) crush de %s!", mentionTag(p)), p.String())
+			cap := fmt.Sprintf("🐍 Alerta de talarico! Todo mundo escondendo o(a) crush de %s!", mentionTag(p))
+			img, err := renderGameCard("ALERTA TALARICO", "@"+p.User, []string{"Todo mundo escondendo o(a) crush desse ser!"}, colEmerald)
+			return sendCard(ctx, img, err, cap, p.String())
 		},
 	})
 
@@ -372,6 +408,7 @@ func registerResenha(r *Registry) {
 			parts := ctx.GroupInfo.Participants
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("🏆 *TOP %s DO GRUPO*\n\n", strings.ToUpper(ctx.CmdName)))
+			var cardLines []string
 			var mentions []string
 			limit := 5
 			if len(parts) < limit {
@@ -379,10 +416,13 @@ func registerResenha(r *Registry) {
 			}
 			for i := 0; i < limit; i++ {
 				p := parts[randInt(0, len(parts)-1)]
+				pct := randInt(50, 100)
 				mentions = append(mentions, p.JID.String())
-				sb.WriteString(fmt.Sprintf("%d. %s — *%d%%*\n", i+1, mentionTag(p.JID), randInt(50, 100)))
+				sb.WriteString(fmt.Sprintf("%d. %s — *%d%%*\n", i+1, mentionTag(p.JID), pct))
+				cardLines = append(cardLines, fmt.Sprintf("%d. @%s — %d%%", i+1, p.JID.User, pct))
 			}
-			return ctx.Bot.SendText(ctx.From, sb.String(), mentions...)
+			img, err := renderGameCard("RANKING DO GRUPO", "TOP "+strings.ToUpper(ctx.CmdName), cardLines, colAmber)
+			return sendCard(ctx, img, err, sb.String(), mentions...)
 		},
 	})
 }

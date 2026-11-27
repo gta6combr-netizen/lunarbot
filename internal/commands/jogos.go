@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +32,10 @@ func registerJogos(r *Registry) {
 	r.Register(&Command{
 		Name: "dado", Category: "jogos", Description: "Rola um dado D6",
 		Execute: func(ctx *Context) error {
-			return ctx.Reply(fmt.Sprintf("🎲 Você rolou: *%d*", randInt(1, 6)))
+			n := randInt(1, 6)
+			cap := fmt.Sprintf("🎲 Você rolou: *%d*", n)
+			img, err := renderGameCard("DADO D6", fmt.Sprintf("Resultado: %d", n), []string{"Lado sorteado de 1 a 6."}, colPurple)
+			return sendCard(ctx, img, err, cap)
 		},
 	})
 
@@ -40,23 +44,31 @@ func registerJogos(r *Registry) {
 		Execute: func(ctx *Context) error {
 			n := randInt(1, 20)
 			extra := ""
+			accent := colCyan
 			if n == 20 {
 				extra = " 🔥 *CRÍTICO!*"
+				accent = colEmerald
 			} else if n == 1 {
 				extra = " 💀 *FALHA CRÍTICA!*"
+				accent = colRose
 			}
-			return ctx.Reply(fmt.Sprintf("🎲 D20: *%d*%s", n, extra))
+			cap := fmt.Sprintf("🎲 D20: *%d*%s", n, extra)
+			img, err := renderGameCard("DADO D20", fmt.Sprintf("Resultado: %d", n), []string{strings.TrimSpace(extra)}, accent)
+			return sendCard(ctx, img, err, cap)
 		},
 	})
 
 	r.Register(&Command{
 		Name: "moeda", Aliases: []string{"caracoroa"}, Category: "jogos", Description: "Joga cara ou coroa",
 		Execute: func(ctx *Context) error {
-			res := "🪙 *Cara!*"
+			side := "Cara!"
+			accent := colAmber
 			if randInt(0, 1) == 1 {
-				res = "🪙 *Coroa!*"
+				side = "Coroa!"
+				accent = colCyan
 			}
-			return ctx.Reply(res)
+			img, err := renderGameCard("CARA OU COROA", side, []string{"Moeda lançada."}, accent)
+			return sendCard(ctx, img, err, "🪙 *"+side+"*")
 		},
 	})
 
@@ -71,20 +83,27 @@ func registerJogos(r *Registry) {
 			}
 			u := ctx.DB.GetUser(ctx.Sender.String())
 			if u.Coins < bet {
-				return ctx.Reply(fmt.Sprintf("❌ Saldo insuficiente! Você tem *%d*.", u.Coins))
+				cap := fmt.Sprintf("❌ Saldo insuficiente! Você tem *%d*.", u.Coins)
+				img, err := renderGameCard("CASSINO SLOT", "Saldo insuficiente", []string{fmt.Sprintf("Você tem %d %s (aposta mínima: %d).", u.Coins, ctx.Config.Moeda.Simbolo, bet)}, colRose)
+				return sendCard(ctx, img, err, cap)
 			}
 			syms := []string{"🍒", "🍋", "🍇", "💎", "7️⃣", "🔔"}
-			a, b, c := syms[randInt(0, 5)], syms[randInt(0, 5)], syms[randInt(0, 5)]
+			names := []string{"Cereja", "Limão", "Uva", "Diamante", "7", "Sino"}
+			ia, ib, ic := randInt(0, 5), randInt(0, 5), randInt(0, 5)
+			a, b, c := syms[ia], syms[ib], syms[ic]
 			var delta int64
 			var msg string
+			accent := colRose
 			if a == b && b == c {
 				delta = bet * 4
 				u.Wins++
 				msg = fmt.Sprintf("🎰 *JACKPOT!* Ganhou *+%d %s*!", delta, ctx.Config.Moeda.Simbolo)
+				accent = colEmerald
 			} else if a == b || b == c || a == c {
 				delta = bet
 				u.Wins++
 				msg = fmt.Sprintf("🎰 *Dupla!* Ganhou *+%d %s*!", delta, ctx.Config.Moeda.Simbolo)
+				accent = colAmber
 			} else {
 				delta = -bet
 				u.Losses++
@@ -95,7 +114,9 @@ func registerJogos(r *Registry) {
 				u.Coins = 0
 			}
 			_ = ctx.DB.SaveUser(u)
-			return ctx.Reply(fmt.Sprintf("[ %s | %s | %s ]\n\n%s\n💰 Saldo: *%d*", a, b, c, msg, u.Coins))
+			cap := fmt.Sprintf("[ %s | %s | %s ]\n\n%s\n💰 Saldo: *%d*", a, b, c, msg, u.Coins)
+			img, err := renderGameCard("CASSINO SLOT", fmt.Sprintf("[ %s | %s | %s ]", names[ia], names[ib], names[ic]), []string{msg, fmt.Sprintf("Saldo atual: %d %s", u.Coins, ctx.Config.Moeda.Simbolo)}, accent)
+			return sendCard(ctx, img, err, cap)
 		},
 	})
 
@@ -112,7 +133,9 @@ func registerJogos(r *Registry) {
 			gameMu.Unlock()
 
 			if ctx.Q == "" {
-				return ctx.Reply("🔢 Jogo iniciado! Chute um número de *1 a 100* com `.adivinha <n>`")
+				cap := "🔢 Jogo iniciado! Chute um número de *1 a 100* com `.adivinha <n>`"
+				img, err := renderGameCard("ADIVINHA", "Chute de 1 a 100", []string{"Use .adivinha <numero> para tentar."}, colPurple)
+				return sendCard(ctx, img, err, cap)
 			}
 			guess, err := strconv.Atoi(ctx.Args[0])
 			if err != nil {
@@ -123,12 +146,16 @@ func registerJogos(r *Registry) {
 				delete(adivinhaAns, chat)
 				gameMu.Unlock()
 				ctx.DB.AddCoins(ctx.Sender.String(), 50)
-				return ctx.Reply(fmt.Sprintf("🎉 *ACERTOU!* Era *%d*! Você ganhou *+50 %s*!", target, ctx.Config.Moeda.Simbolo))
+				cap := fmt.Sprintf("🎉 *ACERTOU!* Era *%d*! Você ganhou *+50 %s*!", target, ctx.Config.Moeda.Simbolo)
+				img, err := renderGameCard("ADIVINHA", fmt.Sprintf("Acertou! Era %d", target), []string{"Recompensa: +50 " + ctx.Config.Moeda.Simbolo}, colEmerald)
+				return sendCard(ctx, img, err, cap)
 			}
 			if guess < target {
-				return ctx.Reply("⬆️ Mais alto!")
+				img, err := renderGameCard("ADIVINHA", fmt.Sprintf("Chute: %d", guess), []string{"Dica: Mais ALTO!"}, colAmber)
+				return sendCard(ctx, img, err, "⬆️ Mais alto!")
 			}
-			return ctx.Reply("⬇️ Mais baixo!")
+			img, err := renderGameCard("ADIVINHA", fmt.Sprintf("Chute: %d", guess), []string{"Dica: Mais BAIXO!"}, colCyan)
+			return sendCard(ctx, img, err, "⬇️ Mais baixo!")
 		},
 	})
 
@@ -142,7 +169,9 @@ func registerJogos(r *Registry) {
 				a, b := randInt(10, 99), randInt(10, 99)
 				mathAns[chat] = a + b
 				gameMu.Unlock()
-				return ctx.Reply(fmt.Sprintf("🧮 Quanto é *%d + %d*? Responda com `.mathquiz <resposta>`", a, b))
+				cap := fmt.Sprintf("🧮 Quanto é *%d + %d*? Responda com `.mathquiz <resposta>`", a, b)
+				img, err := renderGameCard("MATH QUIZ", fmt.Sprintf("Quanto é %d + %d ?", a, b), []string{"Responda com .mathquiz <resposta>"}, colCyan)
+				return sendCard(ctx, img, err, cap)
 			}
 			gameMu.Unlock()
 			guess, err := strconv.Atoi(ctx.Args[0])
@@ -154,9 +183,12 @@ func registerJogos(r *Registry) {
 				delete(mathAns, chat)
 				gameMu.Unlock()
 				ctx.DB.AddCoins(ctx.Sender.String(), 30)
-				return ctx.Reply(fmt.Sprintf("✅ Correto! *+30 %s*", ctx.Config.Moeda.Simbolo))
+				cap := fmt.Sprintf("✅ Correto! *+30 %s*", ctx.Config.Moeda.Simbolo)
+				img, err := renderGameCard("MATH QUIZ", fmt.Sprintf("Correto! Resposta: %d", ans), []string{"+30 " + ctx.Config.Moeda.Simbolo}, colEmerald)
+				return sendCard(ctx, img, err, cap)
 			}
-			return ctx.Reply("❌ Errado! Tente novamente.")
+			img, err := renderGameCard("MATH QUIZ", "Resposta errada!", []string{"Tente novamente com .mathquiz <numero>"}, colRose)
+			return sendCard(ctx, img, err, "❌ Errado! Tente novamente.")
 		},
 	})
 
@@ -176,7 +208,10 @@ func registerJogos(r *Registry) {
 					runes[i], runes[j] = runes[j], runes[i]
 				}
 				gameMu.Unlock()
-				return ctx.Reply(fmt.Sprintf("🔤 Desembaralhe: *%s*\nResponda com `.anagrama <palavra>`", string(runes)))
+				scr := string(runes)
+				cap := fmt.Sprintf("🔤 Desembaralhe: *%s*\nResponda com `.anagrama <palavra>`", scr)
+				img, err := renderGameCard("ANAGRAMA", scr, []string{"Desembaralhe a palavra e responda com .anagrama <palavra>"}, colPurple)
+				return sendCard(ctx, img, err, cap)
 			}
 			gameMu.Unlock()
 			if strings.EqualFold(ctx.Q, ans) {
@@ -184,9 +219,12 @@ func registerJogos(r *Registry) {
 				delete(anagramAns, chat)
 				gameMu.Unlock()
 				ctx.DB.AddCoins(ctx.Sender.String(), 40)
-				return ctx.Reply(fmt.Sprintf("🎉 Acertou! Era *%s* (+40 %s)", ans, ctx.Config.Moeda.Simbolo))
+				cap := fmt.Sprintf("🎉 Acertou! Era *%s* (+40 %s)", ans, ctx.Config.Moeda.Simbolo)
+				img, err := renderGameCard("ANAGRAMA", "Acertou: "+ans, []string{"+40 " + ctx.Config.Moeda.Simbolo}, colEmerald)
+				return sendCard(ctx, img, err, cap)
 			}
-			return ctx.Reply("❌ Não é essa palavra!")
+			img, err := renderGameCard("ANAGRAMA", "Não é essa palavra!", []string{"Tente novamente."}, colRose)
+			return sendCard(ctx, img, err, "❌ Não é essa palavra!")
 		},
 	})
 
@@ -203,7 +241,9 @@ func registerJogos(r *Registry) {
 				st.Guessed = make(map[rune]bool)
 				st.Errors = 0
 				forcaState[chat] = st
-				return ctx.Reply("🪢 *Jogo da Forca iniciado!*\n" + renderForca(st.Word, st.Guessed, st.Errors))
+				mask, used := forcaMaskAndUsed(st.Word, st.Guessed)
+				img, err := renderForcaCard(mask, st.Errors, 6, used, "Use .forca <letra> para jogar")
+				return sendCard(ctx, img, err, "🪢 *Jogo da Forca iniciado!*\n"+renderForca(st.Word, st.Guessed, st.Errors))
 			}
 			ch := []rune(strings.ToUpper(ctx.Args[0]))[0]
 			if !st.Guessed[ch] {
@@ -214,17 +254,21 @@ func registerJogos(r *Registry) {
 			}
 			forcaState[chat] = st
 			disp := renderForca(st.Word, st.Guessed, st.Errors)
+			mask, used := forcaMaskAndUsed(st.Word, st.Guessed)
 			if !strings.Contains(disp, "_") {
 				delete(forcaState, chat)
 				ctx.DB.AddCoins(ctx.Sender.String(), 60)
-				return ctx.Reply("🎉 *VOCÊ VENCEU!*\n" + disp + "\n+60 " + ctx.Config.Moeda.Simbolo)
+				img, err := renderForcaCard(mask, st.Errors, 6, used, "VOCÊ VENCEU! +60 "+ctx.Config.Moeda.Simbolo)
+				return sendCard(ctx, img, err, "🎉 *VOCÊ VENCEU!*\n"+disp+"\n+60 "+ctx.Config.Moeda.Simbolo)
 			}
 			if st.Errors >= 6 {
 				w := st.Word
 				delete(forcaState, chat)
-				return ctx.Reply("💀 *ENFORCADO!* A palavra era: *" + w + "*")
+				img, err := renderForcaCard(w, 6, 6, used, "ENFORCADO! Palavra: "+w)
+				return sendCard(ctx, img, err, "💀 *ENFORCADO!* A palavra era: *"+w+"*")
 			}
-			return ctx.Reply(disp)
+			img, err := renderForcaCard(mask, st.Errors, 6, used, "Continue: .forca <letra>")
+			return sendCard(ctx, img, err, disp)
 		},
 	})
 
@@ -237,15 +281,18 @@ func registerJogos(r *Registry) {
 				{"Em que ano o homem pisou na Lua?", "1969"},
 			}
 			p := qs[randInt(0, len(qs)-1)]
-			return ctx.Reply(fmt.Sprintf("❓ *QUIZ:* %s\n\n||Resposta: %s||", p.q, p.a))
+			cap := fmt.Sprintf("❓ *QUIZ:* %s\n\n||Resposta: %s||", p.q, p.a)
+			img, err := renderGameCard("QUIZ", "Conhecimentos Gerais", []string{p.q, "(Resposta oculta na legenda)"}, colAmber)
+			return sendCard(ctx, img, err, cap)
 		},
 	})
 
 	r.Register(&Command{
 		Name: "memoria", Category: "jogos", Description: "Desafio rápido de memória",
 		Execute: func(ctx *Context) error {
-			seq := fmt.Sprintf("%d-%d-%d-%d", randInt(1, 9), randInt(1, 9), randInt(1, 9), randInt(1, 9))
-			return ctx.Reply("🧠 Memorize a sequência: *" + seq + "*")
+			seq := fmt.Sprintf("%d - %d - %d - %d", randInt(1, 9), randInt(1, 9), randInt(1, 9), randInt(1, 9))
+			img, err := renderGameCard("MEMÓRIA", seq, []string{"Memorize esta sequência!"}, colPurple)
+			return sendCard(ctx, img, err, "🧠 Memorize a sequência: *"+seq+"*")
 		},
 	})
 
@@ -256,7 +303,12 @@ func registerJogos(r *Registry) {
 			atk := 10 + u.Level*3
 			def := 8 + u.Level*2
 			hp := 100 + u.Level*20
-			return ctx.Reply(fmt.Sprintf("⚔️ *FICHA RPG*\n❤️ HP: *%d*\n🗡️ ATK: *%d*\n🛡️ DEF: *%d*\n⭐ Nível: *%d*", hp, atk, def, u.Level))
+			cap := fmt.Sprintf("⚔️ *FICHA RPG*\n❤️ HP: *%d*\n🗡️ ATK: *%d*\n🛡️ DEF: *%d*\n⭐ Nível: *%d*", hp, atk, def, u.Level)
+			img, err := renderGameCard("FICHA RPG", fmt.Sprintf("Nível %d", u.Level), []string{
+				fmt.Sprintf("HP: %d   |   ATK: %d   |   DEF: %d", hp, atk, def),
+				fmt.Sprintf("Vitórias: %d   |   Derrotas: %d", u.Wins, u.Losses),
+			}, colEmerald)
+			return sendCard(ctx, img, err, cap)
 		},
 	})
 
@@ -279,7 +331,8 @@ func registerJogos(r *Registry) {
 					Turn:    ctx.Sender.String(),
 				}
 				velhaGames[chat] = g
-				return ctx.Reply("⭕❌ *Jogo da Velha iniciado!*\n" + renderVelha(g))
+				img, err := renderVelhaCard(g.Board, "Vez do X! Use .velha <1-9>", shortJID(g.Player1), shortJID(g.Player2))
+				return sendCard(ctx, img, err, "⭕❌ *Jogo da Velha iniciado!*\n"+renderVelha(g))
 			}
 			if ctx.Sender.String() != g.Turn {
 				return ctx.Reply("⏳ Não é sua vez!")
@@ -299,18 +352,66 @@ func registerJogos(r *Registry) {
 			g.Board[idx] = mark
 			if checkVelhaWin(g.Board, mark) {
 				board := renderVelha(g)
+				bCopy := g.Board
+				p1, p2 := shortJID(g.Player1), shortJID(g.Player2)
 				delete(velhaGames, chat)
 				ctx.DB.AddCoins(ctx.Sender.String(), 50)
-				return ctx.Reply("🏆 *VITÓRIA!*\n" + board)
+				img, err := renderVelhaCard(bCopy, fmt.Sprintf("VITÓRIA DE %s! (+50 %s)", mark, ctx.Config.Moeda.Simbolo), p1, p2)
+				return sendCard(ctx, img, err, "🏆 *VITÓRIA!*\n"+board)
 			}
+			if checkVelhaDraw(g.Board) {
+				board := renderVelha(g)
+				bCopy := g.Board
+				p1, p2 := shortJID(g.Player1), shortJID(g.Player2)
+				delete(velhaGames, chat)
+				img, err := renderVelhaCard(bCopy, "EMPATE! Deu velha!", p1, p2)
+				return sendCard(ctx, img, err, "🤝 *EMPATE!* Deu velha!\n"+board)
+			}
+			nextMark := "O"
 			if g.Turn == g.Player1 {
 				g.Turn = g.Player2
 			} else {
 				g.Turn = g.Player1
+				nextMark = "X"
 			}
-			return ctx.Reply(renderVelha(g))
+			img, err := renderVelhaCard(g.Board, fmt.Sprintf("Vez do %s! Use .velha <1-9>", nextMark), shortJID(g.Player1), shortJID(g.Player2))
+			return sendCard(ctx, img, err, renderVelha(g))
 		},
 	})
+}
+
+func shortJID(jid string) string {
+	if i := strings.IndexByte(jid, '@'); i > 0 {
+		return jid[:i]
+	}
+	return jid
+}
+
+func forcaMaskAndUsed(word string, guessed map[rune]bool) (string, string) {
+	var sb strings.Builder
+	for _, r := range word {
+		if guessed[r] {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune('_')
+		}
+		sb.WriteRune(' ')
+	}
+	var letters []string
+	for r := range guessed {
+		letters = append(letters, string(r))
+	}
+	sort.Strings(letters)
+	return strings.TrimSpace(sb.String()), strings.Join(letters, " ")
+}
+
+func checkVelhaDraw(b [9]string) bool {
+	for _, v := range b {
+		if v != "X" && v != "O" {
+			return false
+		}
+	}
+	return true
 }
 
 func renderForca(word string, guessed map[rune]bool, errs int) string {
