@@ -747,7 +747,7 @@ func registerMidias(r *Registry) {
 			ctx.React("✨")
 			bg := color.RGBA{0x56, 0x82, 0x03, 255} // #568203
 			fg := color.RGBA{255, 255, 255, 255}
-			frames, err := renderTextStickerFrames(ctx.Q, bg, fg)
+			frames, err := renderTextStickerFrames(ctx.Config.RootDir, ctx.Q, bg, fg)
 			if err != nil || len(frames) == 0 {
 				return ctx.Reply("❌ Erro ao gerar texto.")
 			}
@@ -766,7 +766,7 @@ func registerMidias(r *Registry) {
 			}
 			outWebp := filepath.Join(frameDir, "out.webp")
 			cmd := exec.Command("ffmpeg", "-y", "-framerate", "10", "-i", filepath.Join(frameDir, "f_%03d.png"),
-				"-vcodec", "libwebp", "-lossless", "0", "-q:v", "80", "-loop", "0", "-an", outWebp)
+				"-vf", "scale=512:512,setsar=1", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "80", "-loop", "0", "-an", outWebp)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return ctx.Reply("❌ Erro ao animar figurinha: " + string(out))
 			}

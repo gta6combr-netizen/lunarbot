@@ -815,20 +815,31 @@ func renderVersusCard(tag, title, leftName, rightName, centerBadge, footerText s
 	return encodePNG(img)
 }
 
-func renderTextStickerFrames(text string, bg, fg color.RGBA) ([][]byte, error) {
-	const size = 512
-	f := makeFace(true, 58)
+func makeStickerFace(rootDir string, size float64) font.Face {
+	if raw, err := os.ReadFile(filepath.Join(rootDir, "assets", "sticker-font.ttf")); err == nil {
+		if f, err := opentype.Parse(raw); err == nil {
+			if face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull}); err == nil {
+				return face
+			}
+		}
+	}
+	return makeFace(true, size)
+}
+
+func renderTextStickerFrames(rootDir, text string, bg, fg color.RGBA) ([][]byte, error) {
+	const w, h = 512, 400
+	f := makeStickerFace(rootDir, 62)
 	if f == nil {
 		return nil, fmt.Errorf("font unavailable")
 	}
 	defer f.Close()
 
-	fullLines := wrapText(f, text, 450)
+	fullLines := wrapText(f, text, 456)
 	if len(fullLines) == 0 {
 		return nil, fmt.Errorf("empty text")
 	}
-	if len(fullLines) > 6 {
-		fullLines = fullLines[:6]
+	if len(fullLines) > 5 {
+		fullLines = fullLines[:5]
 	}
 
 	totalRunes := 0
@@ -851,18 +862,18 @@ func renderTextStickerFrames(text string, bg, fg color.RGBA) ([][]byte, error) {
 	for c := step; c < totalRunes; c += step {
 		counts = append(counts, c)
 	}
-	for h := 0; h < 6; h++ {
+	for k := 0; k < 6; k++ {
 		counts = append(counts, totalRunes)
 	}
 
-	lineH := 66
-	startY := (size-(len(fullLines)-1)*lineH)/2 + 18
+	lineH := 68
+	startY := (h-(len(fullLines)-1)*lineH)/2 + 20
 	outline := color.RGBA{10, 10, 16, 255}
 
 	var frames [][]byte
 	for _, limit := range counts {
-		img := image.NewRGBA(image.Rect(0, 0, size, size))
-		fillRoundedRect(img, 12, 12, size-24, size-24, 56, bg)
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		fillRect(img, 0, 0, w, h, bg)
 		rem := limit
 		y := startY
 		for i, lr := range lineRunes {
@@ -876,7 +887,7 @@ func renderTextStickerFrames(text string, bg, fg color.RGBA) ([][]byte, error) {
 			rem -= take
 			partial := string(lr[:take])
 			fullW := font.MeasureString(f, fullLines[i]).Ceil()
-			x := (size - fullW) / 2
+			x := (w - fullW) / 2
 			for oy := -3; oy <= 3; oy++ {
 				for ox := -3; ox <= 3; ox++ {
 					if ox != 0 || oy != 0 {
