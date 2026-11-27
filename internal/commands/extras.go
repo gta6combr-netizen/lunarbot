@@ -199,4 +199,43 @@ func registerExtras(r *Registry) {
 			return ctx.SendImage(b, "🔞")
 		},
 	})
+
+	// Memória da Lunar
+	r.Register(&Command{
+		Name: "lembrancas", Aliases: []string{"lembrar", "memories"}, Category: "extras",
+		Description: "Mostra o que a Lunar lembra sobre você",
+		Execute: func(ctx *Context) error {
+			facts := ctx.DB.GetLunarMemories("user:"+ctx.Sender.ToNonAD().String(), 20)
+			if len(facts) == 0 {
+				return ctx.Reply("🧠 Ainda não guardei nenhum fato permanente sobre você.")
+			}
+			var sb strings.Builder
+			sb.WriteString("🧠 *O que eu lembro sobre você:*\n\n")
+			for i, f := range facts {
+				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, f))
+			}
+			return ctx.Reply(sb.String())
+		},
+	})
+
+	r.Register(&Command{
+		Name: "esquecer", Aliases: []string{"limparchat"}, Category: "extras",
+		Description: "Apaga lembranças da Lunar (.esquecer [termo|tudo|chat])",
+		Execute: func(ctx *Context) error {
+			q := strings.TrimSpace(ctx.Q)
+			if strings.EqualFold(q, "chat") {
+				if err := ctx.DB.ClearLunarHistory(ctx.From.String()); err != nil {
+					return ctx.Reply("❌ Erro ao limpar histórico do chat.")
+				}
+				return ctx.Reply("🧹 Histórico de conversa deste chat limpo.")
+			}
+			senderKey := "user:" + ctx.Sender.ToNonAD().String()
+			if strings.EqualFold(q, "tudo") || q == "" {
+				n, _ := ctx.DB.DeleteLunarMemory(senderKey, "")
+				return ctx.Reply(fmt.Sprintf("🧹 Apaguei %d lembrança(s) suas.", n))
+			}
+			n, _ := ctx.DB.DeleteLunarMemory(senderKey, q)
+			return ctx.Reply(fmt.Sprintf("🧹 Apaguei %d lembrança(s) com %q.", n, q))
+		},
+	})
 }

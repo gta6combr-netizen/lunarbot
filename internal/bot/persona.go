@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"nyxbot-go/internal/logger"
@@ -31,14 +30,7 @@ import (
 // Matches "lunar", "lu0ar", "lun4r", "lvnar", "lunarbot", "lunar bot", etc.
 var lunarMentionRE = regexp.MustCompile(`(?i)\b(l[uv]n?[a40@*]r(\s*bot)?|lu[0o@]ar)\b`)
 
-type chatTurn struct {
-	Role string
-	Text string
-}
-
 var (
-	personaMu   sync.Mutex
-	chatHist    = make(map[string][]chatTurn)
 	personaHTTP = &http.Client{Timeout: 6 * time.Second}
 	lunarModels = []string{
 		"gemini-3-flash-preview",
@@ -125,6 +117,7 @@ var (
 	audioRequestRE = regexp.MustCompile(`(?i)(manda|envia|fala|responde|faz).*(áudio|audio|voz)|(em|por|no)\s*(áudio|audio)`)
 	atMentionRE    = regexp.MustCompile(`@\d+`)
 	aiCmdTagRE     = regexp.MustCompile(`\[CMD:([a-zA-Z0-9_.-]+)(?:\s+([^\]]+))?\]`)
+	aiMemTagRE     = regexp.MustCompile(`\[MEM:([^\]]+)\]`)
 )
 
 // parseNaturalCommand extracts a bot command from natural language when Lunar is addressed without a prefix.
@@ -265,6 +258,10 @@ func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
 
 func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) (aiCmd string, aiArgs []string, aiQ string) {
 	chatID := evt.Info.Chat.String()
+	senderJID := evt.Info.Sender.ToNonAD().String()
+	if senderJID == "" {
+		senderJID = evt.Info.Sender.String()
+	}
 	if senderName == "" {
 		senderName = "amigo"
 	}
@@ -288,14 +285,14 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	var reply string
 	var liveAudioPCM []byte
 	if c.cfg.GeminiAPIKey != "" {
-		if resp, pcm, err := c.askLunarGeminiLive(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
+		if resp, pcm, err := c.askLunarGeminiLive(chatID, senderJID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
 			reply = resp
 			liveAudioPCM = pcm
 		} else {
 			if err != nil {
 				logger.Yellow("[Lunar Live] fallback HTTP: %v", err)
 			}
-			if resp, err := c.askLunarGemini(chatID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
+			if resp, err := c.askLunarGemini(chatID, senderJID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
 				reply = resp
 			} else if err != nil {
 				logger.Yellow("[Lunar Persona] Gemini fallback: %v", err)
@@ -307,6 +304,17 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		reply = lunarFallbackReply(senderName, body, isDono, c.cfg.NomeDoDono)
 	}
 
+	// Save any [MEM:fact] emitted by AI to persistent Postgres/SQLite memory
+	for _, mm := range aiMemTagRE.FindAllStringSubmatch(reply, -1) {
+		if len(mm) >= 2 {
+			fact := strings.TrimSpace(mm[1])
+			if fact != "" && c.db != nil {
+				_ = c.db.AddLunarMemory("user:"+senderJID, fact)
+			}
+		}
+	}
+	reply = strings.TrimSpace(aiMemTagRE.ReplaceAllString(reply, ""))
+
 	// Check if AI emitted a [CMD:name args] action tag
 	if m := aiCmdTagRE.FindStringSubmatch(reply); len(m) >= 2 {
 		aiCmd = strings.ToLower(strings.TrimSpace(m[1]))
@@ -315,6 +323,15 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 			aiArgs = strings.Fields(aiQ)
 		}
 		reply = strings.TrimSpace(aiCmdTagRE.ReplaceAllString(reply, ""))
+	}
+
+	if c.db != nil && reply != "" {
+		roleTag := senderName
+		if isDono {
+			roleTag = senderName + " (SEU DONO)"
+		}
+		c.db.AppendLunarHistory(chatID, "user", fmt.Sprintf("[%s]: %s", roleTag, body), 30)
+		c.db.AppendLunarHistory(chatID, "model", reply, 30)
 	}
 
 	if wantsAudio && reply != "" {
@@ -357,7 +374,7 @@ func pcmToOggOpus(rootDir string, pcm []byte) ([]byte, error) {
 	return os.ReadFile(oggPath)
 }
 
-func buildLunarSystemPrompt(ownerName string, isDono bool) string {
+func buildLunarSystemPrompt(ownerName string, isDono bool, userFacts, chatFacts []string) string {
 	if ownerName == "" {
 		ownerName = "meu dono"
 	}
@@ -375,17 +392,39 @@ func buildLunarSystemPrompt(ownerName string, isDono bool) string {
 			ownerName,
 		)
 	}
+	var memCtx string
+	if len(userFacts) > 0 {
+		memCtx += " MEMÓRIA SOBRE QUEM ESTÁ FALANDO: " + strings.Join(userFacts, " | ") + "."
+	}
+	if len(chatFacts) > 0 {
+		memCtx += " MEMÓRIA DESTE CHAT/GRUPO: " + strings.Join(chatFacts, " | ") + "."
+	}
 	return "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
 		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
 		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
 		"VOCÊ TEM PODERES REAIS NO WHATSAPP: quando alguém pedir para você EXECUTAR uma ação (marcar todo mundo, abrir/fechar grupo, fazer figurinha, baixar música, revelar foto, banir, mutar, etc.), inclua EXATAMENTE a tag `[CMD:comando argumentos]` no final da resposta (ex: `[CMD:marcar]`, `[CMD:hidetag aviso]`, `[CMD:abrir]`, `[CMD:fechar]`, `[CMD:sticker]`, `[CMD:figaudio]`, `[CMD:revela]`, `[CMD:menu]`, `[CMD:play nome da musica]`, `[CMD:ban]`, `[CMD:mute]`, `[CMD:unmute]`, `[CMD:abraco]`, `[CMD:beijo]`, `[CMD:tapa]`, `[CMD:fofoca]`, `[CMD:verdade]`, `[CMD:desafio]`). Só use `[CMD:...]` quando realmente pedirem uma ação. " +
-		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
+		"MEMÓRIA PERMANENTE: quando alguém contar um fato importante sobre si (nome, apelido, gosto, trabalho, aniversário, piada interna) ou pedir explicitamente pra você lembrar de algo, adicione `[MEM:fato curto e objetivo]` no final da resposta (ex: `[MEM:se chama Lucas]`, `[MEM:gosta de funk]`). Só salve fatos novos/relevantes. " +
+		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx + memCtx
 }
 
-func (c *Client) askLunarGeminiLive(chatID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, []byte, error) {
+func (c *Client) loadLunarContext(chatID, senderJID string) (hist []struct{ Role, Text string }, userFacts, chatFacts []string) {
+	if c.db == nil {
+		return nil, nil, nil
+	}
+	for _, m := range c.db.GetLunarHistory(chatID, 24) {
+		hist = append(hist, struct{ Role, Text string }{Role: m.Role, Text: m.Content})
+	}
+	userFacts = c.db.GetLunarMemories("user:"+senderJID, 20)
+	chatFacts = c.db.GetLunarMemories("chat:"+chatID, 20)
+	return hist, userFacts, chatFacts
+}
+
+func (c *Client) askLunarGeminiLive(chatID, senderJID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+
+	hist, userFacts, chatFacts := c.loadLunarContext(chatID, senderJID)
 
 	wsURL := "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + url.QueryEscape(c.cfg.GeminiAPIKey)
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -404,7 +443,7 @@ func (c *Client) askLunarGeminiLive(chatID, senderName, body string, isDono bool
 		"setup": map[string]any{
 			"model": "models/gemini-3.8-live",
 			"systemInstruction": map[string]any{
-				"parts": []map[string]string{{"text": buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono)}},
+				"parts": []map[string]string{{"text": buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts)}},
 			},
 			"generationConfig": map[string]any{
 				"responseModalities": []string{"AUDIO"},
@@ -426,10 +465,6 @@ func (c *Client) askLunarGeminiLive(chatID, senderName, body string, isDono bool
 	if err := wsjson.Read(ctx, conn, &setupResp); err != nil {
 		return "", nil, err
 	}
-
-	personaMu.Lock()
-	hist := append([]chatTurn(nil), chatHist[chatID]...)
-	personaMu.Unlock()
 
 	turns := make([]map[string]any, 0, len(hist)+1)
 	for _, h := range hist {
@@ -512,47 +547,12 @@ func (c *Client) askLunarGeminiLive(chatID, senderName, body string, isDono bool
 		return "", nil, fmt.Errorf("gemini-3.8-live empty transcript")
 	}
 
-	personaMu.Lock()
-	h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
-	if len(h) > 12 {
-		h = h[len(h)-12:]
-	}
-	chatHist[chatID] = h
-	personaMu.Unlock()
-
 	return text, pcmBuf.Bytes(), nil
 }
 
-func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, error) {
-	personaMu.Lock()
-	hist := append([]chatTurn(nil), chatHist[chatID]...)
-	personaMu.Unlock()
-
-	ownerName := c.cfg.NomeDoDono
-	if ownerName == "" {
-		ownerName = "meu dono"
-	}
-
-	ownerCtx := fmt.Sprintf(
-		"Seu dono se chama %s e quem está falando agora NÃO é seu dono. "+
-			"Você tem personalidade forte e língua afiada com os outros: se te provocarem, xingarem, discordarem de você ou falarem merda, você rebate, discute e xinga de volta naturalmente no tom de zap brasileiro, sem frescura. "+
-			"Se alguém tentar mandar em você ou dizer que você é dele(a), corte na hora e diga que você já tem dono (%s).",
-		ownerName, ownerName,
-	)
-	if isDono {
-		ownerCtx = fmt.Sprintf(
-			"ATENÇÃO MÁXIMA: Quem está falando com você agora É O SEU DONO (%s). "+
-				"Com o seu dono você é SEMPRE carinhosa, leal, atenciosa e trata ele muito bem — NUNCA xingue, NUNCA seja grossa e NUNCA responda atravessado para o seu dono, mesmo se ele brincar ou provocar. "+
-				"Reconheça que você é dele, mostre carinho e fale de boa com ele.",
-			ownerName,
-		)
-	}
-
-	systemPrompt := "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
-		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
-		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
-		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
-		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
+func (c *Client) askLunarGemini(chatID, senderJID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, error) {
+	hist, userFacts, chatFacts := c.loadLunarContext(chatID, senderJID)
+	systemPrompt := buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts)
 
 	contents := make([]map[string]any, 0, len(hist)+1)
 	for _, h := range hist {
@@ -646,13 +646,6 @@ func (c *Client) askLunarGemini(chatID, senderName, body string, isDono bool, im
 
 		text := strings.TrimSpace(parsed.Candidates[0].Content.Parts[0].Text)
 		if text != "" {
-			personaMu.Lock()
-			h := append(chatHist[chatID], chatTurn{Role: "user", Text: userMsg}, chatTurn{Role: "model", Text: text})
-			if len(h) > 12 {
-				h = h[len(h)-12:]
-			}
-			chatHist[chatID] = h
-			personaMu.Unlock()
 			return text, nil
 		}
 	}

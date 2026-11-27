@@ -50,4 +50,31 @@ func TestDBLifecycle(t *testing.T) {
 	if c := d.RemoveWarn(gid, jid); c != 0 {
 		t.Fatalf("expected warn count 0, got %d", c)
 	}
+
+	// Lunar history & long-term memory
+	d.AppendLunarHistory(gid, "user", "[Leo]: oi", 3)
+	d.AppendLunarHistory(gid, "model", "oi leo", 3)
+	d.AppendLunarHistory(gid, "user", "[Leo]: tudo bem?", 3)
+	d.AppendLunarHistory(gid, "model", "tudo ótimo", 3)
+	hist := d.GetLunarHistory(gid, 10)
+	if len(hist) != 3 || hist[0].Content != "oi leo" || hist[2].Content != "tudo ótimo" {
+		t.Fatalf("unexpected lunar history: %+v", hist)
+	}
+
+	_ = d.AddLunarMemory("user:"+jid, "gosta de rock")
+	_ = d.AddLunarMemory("user:"+jid, "mora no RJ")
+	mems := d.GetLunarMemories("user:"+jid, 10)
+	if len(mems) != 2 {
+		t.Fatalf("expected 2 memories, got %d", len(mems))
+	}
+	if n, err := d.DeleteLunarMemory("user:"+jid, "rock"); err != nil || n != 1 {
+		t.Fatalf("expected 1 deleted memory, got %d (err=%v)", n, err)
+	}
+	if got := d.rebind("SELECT * FROM x WHERE a = ? AND b = ?"); got != "SELECT * FROM x WHERE a = ? AND b = ?" {
+		t.Fatalf("sqlite rebind changed query: %s", got)
+	}
+	d.isPostgres = true
+	if got := d.rebind("SELECT * FROM x WHERE a = ? AND b = ?"); got != "SELECT * FROM x WHERE a = $1 AND b = $2" {
+		t.Fatalf("postgres rebind failed: %s", got)
+	}
 }

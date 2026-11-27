@@ -48,6 +48,11 @@ type ScheduledClose struct {
 	MinutosAbrir  int
 }
 
+type LunarMessage struct {
+	Role    string
+	Content string
+}
+
 type DB struct {
 	sql        *sql.DB
 	mu         sync.RWMutex
@@ -120,6 +125,11 @@ func (d *DB) Close() error {
 }
 
 func (d *DB) migrate() error {
+	idCol := "INTEGER PRIMARY KEY AUTOINCREMENT"
+	if d.isPostgres {
+		idCol = "BIGSERIAL PRIMARY KEY"
+	}
+
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS users (
 			jid TEXT PRIMARY KEY,
@@ -204,6 +214,22 @@ func (d *DB) migrate() error {
 			from_jid TEXT NOT NULL,
 			created_at BIGINT DEFAULT 0
 		);`,
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS lunar_history (
+			id %s,
+			chat_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_at BIGINT DEFAULT 0
+		);`, idCol),
+		`CREATE INDEX IF NOT EXISTS idx_lunar_history_chat ON lunar_history (chat_id, id DESC);`,
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS lunar_memories (
+			id %s,
+			scope_id TEXT NOT NULL,
+			fact TEXT NOT NULL,
+			created_at BIGINT DEFAULT 0,
+			UNIQUE(scope_id, fact)
+		);`, idCol),
+		`CREATE INDEX IF NOT EXISTS idx_lunar_memories_scope ON lunar_memories (scope_id);`,
 	}
 
 	for _, s := range stmts {
@@ -817,4 +843,109 @@ func (d *DB) ClearProposal(toJID string) error {
 	defer d.mu.Unlock()
 	_, err := d.exec(`DELETE FROM marriage_proposals WHERE to_jid = ?`, normJID(toJID))
 	return err
+}
+
+// Lunar persistent conversation history & long-term memories
+func (d *DB) GetLunarHistory(chatID string, limit int) []LunarMessage {
+	if limit <= 0 {
+		limit = 24
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.query(`SELECT role, content FROM lunar_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?`, chatID, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var rev []LunarMessage
+	for rows.Next() {
+		var m LunarMessage
+		if rows.Scan(&m.Role, &m.Content) == nil {
+			rev = append(rev, m)
+		}
+	}
+	out := make([]LunarMessage, len(rev))
+	for i := range rev {
+		out[i] = rev[len(rev)-1-i]
+	}
+	return out
+}
+
+func (d *DB) AppendLunarHistory(chatID, role, content string, keepMax int) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	if keepMax <= 0 {
+		keepMax = 30
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, _ = d.exec(`INSERT INTO lunar_history (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)`,
+		chatID, role, content, time.Now().UnixMilli())
+	_, _ = d.exec(`DELETE FROM lunar_history WHERE chat_id = ? AND id NOT IN (SELECT id FROM lunar_history WHERE chat_id = ? ORDER BY id DESC LIMIT ?)`,
+		chatID, chatID, keepMax)
+}
+
+func (d *DB) ClearLunarHistory(chatID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.exec(`DELETE FROM lunar_history WHERE chat_id = ?`, chatID)
+	return err
+}
+
+func (d *DB) AddLunarMemory(scopeID, fact string) error {
+	fact = strings.TrimSpace(fact)
+	if scopeID == "" || fact == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.exec(`INSERT INTO lunar_memories (scope_id, fact, created_at) VALUES (?, ?, ?) ON CONFLICT(scope_id, fact) DO NOTHING`,
+		scopeID, fact, time.Now().UnixMilli())
+	if err == nil {
+		_, _ = d.exec(`DELETE FROM lunar_memories WHERE scope_id = ? AND id NOT IN (SELECT id FROM lunar_memories WHERE scope_id = ? ORDER BY id DESC LIMIT 50)`,
+			scopeID, scopeID)
+	}
+	return err
+}
+
+func (d *DB) GetLunarMemories(scopeID string, limit int) []string {
+	if scopeID == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.query(`SELECT fact FROM lunar_memories WHERE scope_id = ? ORDER BY id DESC LIMIT ?`, scopeID, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var f string
+		if rows.Scan(&f) == nil && f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (d *DB) DeleteLunarMemory(scopeID, match string) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if strings.TrimSpace(match) == "" {
+		res, err := d.exec(`DELETE FROM lunar_memories WHERE scope_id = ?`, scopeID)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+	res, err := d.exec(`DELETE FROM lunar_memories WHERE scope_id = ? AND LOWER(fact) LIKE LOWER(?)`, scopeID, "%"+strings.TrimSpace(match)+"%")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
