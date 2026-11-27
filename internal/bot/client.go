@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -246,14 +245,10 @@ func (c *Client) ReplyText(evt *events.Message, text string) error {
 
 func (c *Client) SendText(to types.JID, text string, mentions ...string) error {
 	msg := &waE2E.Message{}
-	if len(mentions) > 0 || strings.Contains(text, "@todos") {
-		ci := &waE2E.ContextInfo{MentionedJID: mentions}
-		if strings.Contains(text, "@todos") {
-			ci.NonJIDMentions = proto.Uint32(1)
-		}
+	if len(mentions) > 0 {
 		msg.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
 			Text:        proto.String(text),
-			ContextInfo: ci,
+			ContextInfo: &waE2E.ContextInfo{MentionedJID: mentions},
 		}
 	} else {
 		msg.Conversation = proto.String(text)

@@ -249,7 +249,8 @@ func (c *Client) handleMessage(evt *events.Message) {
 						isAdmin = true
 					}
 				}
-				if c.wa.Store.ID != nil && (p.JID.User == c.wa.Store.ID.User || pPN.User == c.wa.Store.ID.User) {
+				if (c.wa.Store.ID != nil && (p.JID.User == c.wa.Store.ID.User || pPN.User == c.wa.Store.ID.User)) ||
+					(!c.wa.Store.LID.IsEmpty() && (p.JID.User == c.wa.Store.LID.User || p.LID.User == c.wa.Store.LID.User)) {
 					if p.IsAdmin || p.IsSuperAdmin {
 						isBotAdmin = true
 					}
@@ -285,10 +286,14 @@ func (c *Client) handleMessage(evt *events.Message) {
 
 		// Antilink check
 		if c.db.GetGroupFeature(gid, "antilink") && hasLink(evt.Message, body) {
-			if isBotAdmin {
-				if err := c.DeleteMessage(chat, evt.Info.Sender, evt.Info.ID); err == nil {
-					_ = c.SendText(chat, "🔗 Link removido (antilink).")
-				}
+			if !isBotAdmin {
+				_ = c.SendText(chat, "⚠️ *Antilink ativo*, mas preciso ser *admin* do grupo para apagar links.")
+				return
+			}
+			if err := c.DeleteMessage(chat, evt.Info.Sender, evt.Info.ID); err == nil {
+				_ = c.SendText(chat, "🔗 Link removido (antilink).")
+			} else {
+				logger.Yellow("[Antilink] erro ao apagar: %v", err)
 			}
 			return
 		}
