@@ -62,13 +62,13 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	if evt.Info.IsFromMe {
 		return false
 	}
-	// In private chat (PV), only respond to actual text or image/sticker messages (ignore empty/protocol events)
+	// In private chat (PV), only respond to actual text, image, sticker, or audio messages (ignore empty/protocol events)
 	if evt.Info.Chat.Server != types.GroupServer {
 		if body != "" {
 			return true
 		}
 		u := unwrapMsg(evt.Message)
-		return u != nil && (u.ImageMessage != nil || u.StickerMessage != nil)
+		return u != nil && (u.ImageMessage != nil || u.StickerMessage != nil || u.AudioMessage != nil)
 	}
 	if body != "" && lunarMentionRE.MatchString(body) {
 		return true
@@ -290,6 +290,33 @@ func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
 	return nil, ""
 }
 
+func (c *Client) extractAudioForGemini(evt *events.Message) ([]byte, string) {
+	tryAudio := func(m *waE2E.Message) ([]byte, string) {
+		u := unwrapMsg(m)
+		if u == nil || u.AudioMessage == nil {
+			return nil, ""
+		}
+		data, err := c.wa.Download(context.Background(), u.AudioMessage)
+		if err != nil || len(data) == 0 {
+			return nil, ""
+		}
+		mime := strings.TrimSpace(strings.Split(u.AudioMessage.GetMimetype(), ";")[0])
+		if mime == "" || !strings.HasPrefix(mime, "audio/") {
+			mime = "audio/ogg"
+		}
+		return data, mime
+	}
+	if data, mime := tryAudio(evt.Message); len(data) > 0 {
+		return data, mime
+	}
+	if ci := getMsgContextInfo(evt.Message); ci != nil && ci.QuotedMessage != nil {
+		if data, mime := tryAudio(ci.QuotedMessage); len(data) > 0 {
+			return data, mime
+		}
+	}
+	return nil, ""
+}
+
 func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) (aiCmd string, aiArgs []string, aiQ string) {
 	chatID := evt.Info.Chat.String()
 	senderJID := evt.Info.Sender.ToNonAD().String()
@@ -301,9 +328,16 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	imgData, imgMime := c.extractMediaForVision(evt)
+	var audioData []byte
+	var audioMime string
+	if len(imgData) == 0 {
+		audioData, audioMime = c.extractAudioForGemini(evt)
+	}
 	if body == "" {
 		if len(imgData) > 0 {
 			body = "(enviou uma figurinha ou imagem, reaja ao que você vê nela)"
+		} else if len(audioData) > 0 {
+			body = "(usuário enviou um áudio/mensagem de voz — ouça o áudio e responda diretamente ao que foi dito; se pediu alguma ação/comando, inclua [CMD:...])"
 		} else {
 			return "", nil, ""
 		}
@@ -315,7 +349,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		body = fmt.Sprintf("(respondendo à mensagem: %q) %s", quoted, body)
 	}
 
-	wantsAudio := audioRequestRE.MatchString(body)
+	wantsAudio := audioRequestRE.MatchString(body) || (len(audioData) > 0 && c.cfg.ElevenLabsAPIKey != "")
 	if wantsAudio {
 		_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
 	} else {
@@ -325,13 +359,21 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	var reply string
 	var liveAudioPCM []byte
 	if c.cfg.GeminiAPIKey != "" {
-		if resp, pcm, err := c.askLunarGeminiLive(chatID, senderJID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
-			reply = resp
-			liveAudioPCM = pcm
-		} else {
-			if err != nil {
+		if len(audioData) > 0 {
+			if resp, err := c.askLunarGemini(chatID, senderJID, senderName, body, isDono, audioData, audioMime); err == nil && resp != "" {
+				reply = resp
+			} else if err != nil {
+				logger.Yellow("[Lunar Audio] Gemini fallback: %v", err)
+			}
+		} else if c.cfg.ElevenLabsAPIKey == "" && wantsAudio {
+			if resp, pcm, err := c.askLunarGeminiLive(chatID, senderJID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
+				reply = resp
+				liveAudioPCM = pcm
+			} else if err != nil {
 				logger.Yellow("[Lunar Live] fallback HTTP: %v", err)
 			}
+		}
+		if reply == "" {
 			if resp, err := c.askLunarGemini(chatID, senderJID, senderName, body, isDono, imgData, imgMime); err == nil && resp != "" {
 				reply = resp
 			} else if err != nil {
@@ -375,19 +417,19 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 	}
 
 	if wantsAudio && reply != "" {
-		if len(liveAudioPCM) > 0 {
-			if ogg, err := pcmToOggOpus(c.cfg.RootDir, liveAudioPCM); err == nil && len(ogg) > 0 {
-				_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
-				_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
-				return aiCmd, aiArgs, aiQ
-			}
-		}
 		if ogg, err := SynthesizeVoice(c.cfg.RootDir, c.cfg.ElevenLabsAPIKey, c.cfg.ElevenLabsVoiceID, c.cfg.GeminiAPIKey, reply); err == nil && len(ogg) > 0 {
 			_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
 			_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
 			return aiCmd, aiArgs, aiQ
 		} else if err != nil {
 			logger.Yellow("[Lunar TTS] erro: %v", err)
+		}
+		if len(liveAudioPCM) > 0 {
+			if ogg, err := pcmToOggOpus(c.cfg.RootDir, liveAudioPCM); err == nil && len(ogg) > 0 {
+				_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
+				_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
+				return aiCmd, aiArgs, aiQ
+			}
 		}
 	}
 
