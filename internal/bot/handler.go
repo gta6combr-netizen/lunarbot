@@ -331,6 +331,12 @@ func (c *Client) handleMessage(evt *events.Message) {
 
 	// Non-command XP & Lunar natural-language commands / human-like persona reply
 	if !strings.HasPrefix(body, prefix) {
+		if len(body) == 1 && body >= "1" && body <= "9" && commands.HasVelhaTurn(chat.String(), permSender.String()) {
+			if cmd := c.registry.Get("velha"); cmd != nil {
+				c.executeCommand(evt, cmd, chat, permSender, isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip, groupInfo, groupName, prefix, "velha", []string{body}, body, body)
+				return
+			}
+		}
 		if body != "" {
 			c.db.AddXP(permSender.String(), c.cfg.Moeda.XpPorMensagem, c.cfg.Niveis.XpBase, c.cfg.Niveis.Multiplicador)
 		}

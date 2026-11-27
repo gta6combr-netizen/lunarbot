@@ -13,6 +13,7 @@ type velhaGame struct {
 	Player1 string
 	Player2 string
 	Turn    string
+	IsBot   bool
 }
 
 var (
@@ -324,31 +325,53 @@ func registerJogos(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "velha", Category: "jogos", OnlyGroup: true, Description: "Jogo da velha (.velha @oponente ou .velha 1-9)",
+		Name: "velha", Category: "jogos", Description: "Jogo da velha (.velha @oponente, .velha @Lunar ou .velha 1-9)",
 		Execute: func(ctx *Context) error {
 			chat := ctx.From.String()
+			senderStr := ctx.Bot.ResolvePN(ctx.Sender).ToNonAD().String()
 			gameMu.Lock()
 			defer gameMu.Unlock()
 			g := velhaGames[chat]
 			if g == nil || strings.EqualFold(ctx.Q, "novo") {
 				target := resolveTarget(ctx)
-				if target.IsEmpty() {
-					return ctx.Reply("❗ Marque alguém para jogar: `.velha @oponente`")
+				isBot := false
+				if ctx.Bot != nil && ctx.Bot.Raw() != nil && ctx.Bot.Raw().Store.ID != nil && !target.IsEmpty() {
+					botID := ctx.Bot.Raw().Store.ID.ToNonAD()
+					botLID := ctx.Bot.Raw().Store.LID.ToNonAD()
+					tPN := ctx.Bot.ResolvePN(target).ToNonAD()
+					if tPN.User == botID.User || target.User == botID.User || (!botLID.IsEmpty() && (tPN.User == botLID.User || target.User == botLID.User)) {
+						isBot = true
+					}
+				}
+				if strings.EqualFold(ctx.Q, "bot") || strings.EqualFold(ctx.Q, "lunar") || (!ctx.IsGroup && target.IsEmpty()) {
+					isBot = true
+				}
+				if !isBot && target.IsEmpty() {
+					return ctx.Reply("❗ Marque alguém (ou a `@Lunar`) para jogar: `.velha @oponente`")
+				}
+				p2Str := "Lunar"
+				if !isBot {
+					p2Str = ctx.Bot.ResolvePN(target).ToNonAD().String()
 				}
 				g = &velhaGame{
 					Board:   [9]string{"1", "2", "3", "4", "5", "6", "7", "8", "9"},
-					Player1: ctx.Sender.String(),
-					Player2: target.String(),
-					Turn:    ctx.Sender.String(),
+					Player1: senderStr,
+					Player2: p2Str,
+					Turn:    senderStr,
+					IsBot:   isBot,
 				}
 				velhaGames[chat] = g
-				img, err := renderVelhaCard(g.Board, "Vez do X! Use .velha <1-9>", shortJID(g.Player1), shortJID(g.Player2))
+				status := "Vez do X! Responda 1-9 ou .velha <1-9>"
+				if isBot {
+					status = "Você (X) vs Lunar (O)! Jogue 1-9"
+				}
+				img, err := renderVelhaCard(g.Board, status, shortJID(g.Player1), shortJID(g.Player2))
 				return sendCard(ctx, img, err, "⭕❌ *Jogo da Velha iniciado!*\n"+renderVelha(g))
 			}
-			if ctx.Sender.String() != g.Turn {
+			if senderStr != g.Turn {
 				return ctx.Reply("⏳ Não é sua vez!")
 			}
-			pos, err := strconv.Atoi(ctx.Q)
+			pos, err := strconv.Atoi(strings.TrimSpace(ctx.Q))
 			if err != nil || pos < 1 || pos > 9 {
 				return ctx.Reply("❗ Escolha uma posição de 1 a 9.")
 			}
@@ -357,7 +380,7 @@ func registerJogos(r *Registry) {
 				return ctx.Reply("❗ Posição já ocupada.")
 			}
 			mark := "X"
-			if ctx.Sender.String() == g.Player2 {
+			if senderStr == g.Player2 {
 				mark = "O"
 			}
 			g.Board[idx] = mark
@@ -366,7 +389,7 @@ func registerJogos(r *Registry) {
 				bCopy := g.Board
 				p1, p2 := shortJID(g.Player1), shortJID(g.Player2)
 				delete(velhaGames, chat)
-				ctx.DB.AddCoins(ctx.Sender.String(), 50)
+				ctx.DB.AddCoins(senderStr, 50)
 				img, err := renderVelhaCard(bCopy, fmt.Sprintf("VITÓRIA DE %s! (+50 %s)", mark, ctx.Config.Moeda.Simbolo), p1, p2)
 				return sendCard(ctx, img, err, "🏆 *VITÓRIA!*\n"+board)
 			}
@@ -378,6 +401,32 @@ func registerJogos(r *Registry) {
 				img, err := renderVelhaCard(bCopy, "EMPATE! Deu velha!", p1, p2)
 				return sendCard(ctx, img, err, "🤝 *EMPATE!* Deu velha!\n"+board)
 			}
+
+			if g.IsBot {
+				botIdx := pickVelhaBotMove(g.Board)
+				if botIdx >= 0 {
+					g.Board[botIdx] = "O"
+					if checkVelhaWin(g.Board, "O") {
+						board := renderVelha(g)
+						bCopy := g.Board
+						p1, p2 := shortJID(g.Player1), shortJID(g.Player2)
+						delete(velhaGames, chat)
+						img, err := renderVelhaCard(bCopy, "LUNAR (O) VENCEU! Haha", p1, p2)
+						return sendCard(ctx, img, err, fmt.Sprintf("😈 *Ganhei!* Joguei na posição *%d*.\n%s", botIdx+1, board))
+					}
+					if checkVelhaDraw(g.Board) {
+						board := renderVelha(g)
+						bCopy := g.Board
+						p1, p2 := shortJID(g.Player1), shortJID(g.Player2)
+						delete(velhaGames, chat)
+						img, err := renderVelhaCard(bCopy, "EMPATE! Deu velha!", p1, p2)
+						return sendCard(ctx, img, err, "🤝 *EMPATE!* Deu velha!\n"+board)
+					}
+				}
+				img, err := renderVelhaCard(g.Board, fmt.Sprintf("Lunar jogou %d! Sua vez (X)", botIdx+1), shortJID(g.Player1), shortJID(g.Player2))
+				return sendCard(ctx, img, err, fmt.Sprintf("🌙 Joguei *%d*! Sua vez:\n%s", botIdx+1, renderVelha(g)))
+			}
+
 			nextMark := "O"
 			if g.Turn == g.Player1 {
 				g.Turn = g.Player2
@@ -385,10 +434,51 @@ func registerJogos(r *Registry) {
 				g.Turn = g.Player1
 				nextMark = "X"
 			}
-			img, err := renderVelhaCard(g.Board, fmt.Sprintf("Vez do %s! Use .velha <1-9>", nextMark), shortJID(g.Player1), shortJID(g.Player2))
+			img, err := renderVelhaCard(g.Board, fmt.Sprintf("Vez do %s! Responda 1-9 ou .velha <1-9>", nextMark), shortJID(g.Player1), shortJID(g.Player2))
 			return sendCard(ctx, img, err, renderVelha(g))
 		},
 	})
+}
+
+func HasVelhaTurn(chatID, senderJID string) bool {
+	gameMu.Lock()
+	defer gameMu.Unlock()
+	g := velhaGames[chatID]
+	return g != nil && g.Turn == senderJID
+}
+
+func pickVelhaBotMove(b [9]string) int {
+	// 1. Win if possible
+	for i := 0; i < 9; i++ {
+		if b[i] != "X" && b[i] != "O" {
+			orig := b[i]
+			b[i] = "O"
+			win := checkVelhaWin(b, "O")
+			b[i] = orig
+			if win {
+				return i
+			}
+		}
+	}
+	// 2. Block player win
+	for i := 0; i < 9; i++ {
+		if b[i] != "X" && b[i] != "O" {
+			orig := b[i]
+			b[i] = "X"
+			win := checkVelhaWin(b, "X")
+			b[i] = orig
+			if win {
+				return i
+			}
+		}
+	}
+	// 3. Center, then corners, then edges
+	for _, i := range []int{4, 0, 2, 6, 8, 1, 3, 5, 7} {
+		if b[i] != "X" && b[i] != "O" {
+			return i
+		}
+	}
+	return -1
 }
 
 func shortJID(jid string) string {
