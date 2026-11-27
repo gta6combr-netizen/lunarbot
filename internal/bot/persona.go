@@ -34,8 +34,8 @@ var (
 	personaHTTP = &http.Client{Timeout: 20 * time.Second}
 	lunarModels = []string{
 		"gemini-3.8-flash",
-		"gemini-2.5-flash",
-		"gemini-2.5-flash-lite",
+		"gemini-3.5-flash-lite",
+		"gemini-3-flash-preview",
 	}
 )
 
@@ -757,26 +757,38 @@ func (c *Client) askLunarGemini(chatID, senderJID, senderName, body string, isDo
 	var lastErr error
 	for _, model := range lunarModels {
 		endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, url.QueryEscape(c.cfg.GeminiAPIKey))
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(raw))
-		if err != nil {
-			lastErr = err
-			continue
+		var respBytes []byte
+		var status int
+		for attempt := 0; attempt < 2; attempt++ {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(raw))
+			if err != nil {
+				lastErr = err
+				break
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := personaHTTP.Do(req)
+			if err != nil {
+				lastErr = err
+				break
+			}
+			respBytes, err = io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			status = resp.StatusCode
+			resp.Body.Close()
+			if err != nil {
+				lastErr = err
+				break
+			}
+			if status == http.StatusServiceUnavailable && attempt == 0 {
+				time.Sleep(800 * time.Millisecond)
+				continue
+			}
+			break
 		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := personaHTTP.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("%s HTTP %d: %s", model, resp.StatusCode, string(respBytes[:min(len(respBytes), 180)]))
-			logger.Yellow("[Lunar Model] %v", lastErr)
+		if status != http.StatusOK {
+			if status != 0 {
+				lastErr = fmt.Errorf("%s HTTP %d: %s", model, status, string(respBytes[:min(len(respBytes), 180)]))
+				logger.Yellow("[Lunar Model] %v", lastErr)
+			}
 			continue
 		}
 
