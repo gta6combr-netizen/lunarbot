@@ -323,7 +323,11 @@ func (c *Client) handleMessage(evt *events.Message) {
 					return
 				}
 			}
-			c.replyAsLunar(evt, evt.Info.PushName, body, isDono)
+			if aiCmd, aiArgs, aiQ := c.replyAsLunar(evt, evt.Info.PushName, body, isDono); aiCmd != "" {
+				if cmd := c.registry.Get(aiCmd); cmd != nil {
+					c.executeCommand(evt, cmd, chat, permSender, isGroup, isDono, isAdmin, isSuperAdmin, isBotAdmin, isVip, groupInfo, groupName, prefix, aiCmd, aiArgs, aiQ, body)
+				}
+			}
 		}
 		return
 	}

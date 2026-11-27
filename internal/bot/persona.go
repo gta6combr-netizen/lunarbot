@@ -124,6 +124,7 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 var (
 	audioRequestRE = regexp.MustCompile(`(?i)(manda|envia|fala|responde|faz).*(áudio|audio|voz)|(em|por|no)\s*(áudio|audio)`)
 	atMentionRE    = regexp.MustCompile(`@\d+`)
+	aiCmdTagRE     = regexp.MustCompile(`\[CMD:([a-zA-Z0-9_.-]+)(?:\s+([^\]]+))?\]`)
 )
 
 // parseNaturalCommand extracts a bot command from natural language when Lunar is addressed without a prefix.
@@ -179,7 +180,7 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 		return "promover", rawFields[1:], strings.Join(rawFields[1:], " "), true
 	case strings.HasPrefix(lower, "rebaixa "):
 		return "rebaixar", rawFields[1:], strings.Join(rawFields[1:], " "), true
-	case strings.Contains(lower, "marca todo mundo") || strings.Contains(lower, "marcar todos") || strings.Contains(lower, "marca geral"):
+	case strings.Contains(lower, "marca todo") || strings.Contains(lower, "marcar todo") || strings.Contains(lower, "marca todos") || strings.Contains(lower, "marcar todos") || strings.Contains(lower, "marca geral") || strings.Contains(lower, "marca a galera") || strings.Contains(lower, "chama todo") || strings.Contains(lower, "menciona todo") || strings.Contains(lower, "marca o grupo"):
 		return "marcar", nil, "", true
 	case strings.HasPrefix(lower, "toca ") || strings.HasPrefix(lower, "baixa a musica ") || strings.HasPrefix(lower, "baixa a música ") || strings.HasPrefix(lower, "bota pra tocar "):
 		query := cleanedNoAt
@@ -262,7 +263,7 @@ func (c *Client) extractMediaForVision(evt *events.Message) ([]byte, string) {
 	return nil, ""
 }
 
-func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) {
+func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDono bool) (aiCmd string, aiArgs []string, aiQ string) {
 	chatID := evt.Info.Chat.String()
 	if senderName == "" {
 		senderName = "amigo"
@@ -306,25 +307,38 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		reply = lunarFallbackReply(senderName, body, isDono, c.cfg.NomeDoDono)
 	}
 
-	if wantsAudio {
+	// Check if AI emitted a [CMD:name args] action tag
+	if m := aiCmdTagRE.FindStringSubmatch(reply); len(m) >= 2 {
+		aiCmd = strings.ToLower(strings.TrimSpace(m[1]))
+		if len(m) >= 3 && strings.TrimSpace(m[2]) != "" {
+			aiQ = strings.TrimSpace(m[2])
+			aiArgs = strings.Fields(aiQ)
+		}
+		reply = strings.TrimSpace(aiCmdTagRE.ReplaceAllString(reply, ""))
+	}
+
+	if wantsAudio && reply != "" {
 		if len(liveAudioPCM) > 0 {
 			if ogg, err := pcmToOggOpus(c.cfg.RootDir, liveAudioPCM); err == nil && len(ogg) > 0 {
 				_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
 				_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
-				return
+				return aiCmd, aiArgs, aiQ
 			}
 		}
 		if ogg, err := SynthesizeVoice(c.cfg.RootDir, c.cfg.ElevenLabsAPIKey, c.cfg.ElevenLabsVoiceID, c.cfg.GeminiAPIKey, reply); err == nil && len(ogg) > 0 {
 			_ = c.SendAudio(evt.Info.Chat, ogg, true, evt)
 			_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
-			return
+			return aiCmd, aiArgs, aiQ
 		} else if err != nil {
 			logger.Yellow("[Lunar TTS] erro: %v", err)
 		}
 	}
 
-	_ = c.ReplyText(evt, reply)
+	if reply != "" {
+		_ = c.ReplyText(evt, reply)
+	}
 	_ = c.wa.SendChatPresence(context.Background(), evt.Info.Chat, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	return aiCmd, aiArgs, aiQ
 }
 
 func pcmToOggOpus(rootDir string, pcm []byte) ([]byte, error) {
@@ -365,6 +379,7 @@ func buildLunarSystemPrompt(ownerName string, isDono bool) string {
 		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
 		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
+		"VOCÊ TEM PODERES REAIS NO WHATSAPP: quando alguém pedir para você EXECUTAR uma ação (marcar todo mundo, abrir/fechar grupo, fazer figurinha, baixar música, revelar foto, banir, mutar, etc.), inclua EXATAMENTE a tag `[CMD:comando argumentos]` no final da resposta (ex: `[CMD:marcar]`, `[CMD:hidetag aviso]`, `[CMD:abrir]`, `[CMD:fechar]`, `[CMD:sticker]`, `[CMD:figaudio]`, `[CMD:revela]`, `[CMD:menu]`, `[CMD:play nome da musica]`, `[CMD:ban]`, `[CMD:mute]`, `[CMD:unmute]`, `[CMD:abraco]`, `[CMD:beijo]`, `[CMD:tapa]`, `[CMD:fofoca]`, `[CMD:verdade]`, `[CMD:desafio]`). Só use `[CMD:...]` quando realmente pedirem uma ação. " +
 		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx
 }
 
