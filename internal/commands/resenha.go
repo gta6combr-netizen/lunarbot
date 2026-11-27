@@ -2,9 +2,12 @@ package commands
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"nyxbot-go/internal/config"
 )
 
 type gifReactionSpec struct {
@@ -23,15 +26,100 @@ type meterSpec struct {
 	Label   string
 }
 
-func fetchReactionGIF(ep string) []byte {
+func validGIFBytes(b []byte) bool {
+	return len(b) > 4096 && strings.HasPrefix(string(b[:6]), "GIF8")
+}
+
+func fetchGiphyGIF(apiKey, query string) []byte {
+	if apiKey == "" || query == "" {
+		return nil
+	}
+	ep := fmt.Sprintf("https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=10&rating=pg-13",
+		url.QueryEscape(apiKey), url.QueryEscape(query))
+	var res struct {
+		Data []struct {
+			Images struct {
+				Original struct {
+					URL string `json:"url"`
+				} `json:"original"`
+			} `json:"images"`
+		} `json:"data"`
+	}
+	if err := httpGetJSON(ep, &res); err != nil || len(res.Data) == 0 {
+		return nil
+	}
+	pick := res.Data[randInt(0, len(res.Data)-1)].Images.Original.URL
+	if pick == "" {
+		return nil
+	}
+	if b, err := httpGetBytes(pick); err == nil && validGIFBytes(b) {
+		return b
+	}
+	return nil
+}
+
+func fetchKlipyGIF(apiKey, query string) []byte {
+	if apiKey == "" || query == "" {
+		return nil
+	}
+	// Klipy v1 API (and v2 fallback)
+	v1 := fmt.Sprintf("https://api.klipy.com/api/v1/%s/gifs/search?q=%s&per_page=10",
+		url.PathEscape(apiKey), url.QueryEscape(query))
+	var res1 struct {
+		Data struct {
+			Data []struct {
+				File struct {
+					HD struct {
+						GIF struct{ URL string `json:"url"` } `json:"gif"`
+					} `json:"hd"`
+					MD struct {
+						GIF struct{ URL string `json:"url"` } `json:"gif"`
+					} `json:"md"`
+				} `json:"file"`
+			} `json:"data"`
+		} `json:"data"`
+	}
+	if err := httpGetJSON(v1, &res1); err == nil && len(res1.Data.Data) > 0 {
+		item := res1.Data.Data[randInt(0, len(res1.Data.Data)-1)]
+		u := item.File.MD.GIF.URL
+		if u == "" {
+			u = item.File.HD.GIF.URL
+		}
+		if u != "" {
+			if b, err := httpGetBytes(u); err == nil && validGIFBytes(b) {
+				return b
+			}
+		}
+	}
+	v2 := fmt.Sprintf("https://api.klipy.com/v2/search?key=%s&q=%s&limit=10&media_filter=gif",
+		url.QueryEscape(apiKey), url.QueryEscape(query))
+	var res2 struct {
+		Results []struct {
+			MediaFormats struct {
+				GIF struct{ URL string `json:"url"` } `json:"gif"`
+			} `json:"media_formats"`
+		} `json:"results"`
+	}
+	if err := httpGetJSON(v2, &res2); err == nil && len(res2.Results) > 0 {
+		u := res2.Results[randInt(0, len(res2.Results)-1)].MediaFormats.GIF.URL
+		if u != "" {
+			if b, err := httpGetBytes(u); err == nil && validGIFBytes(b) {
+				return b
+			}
+		}
+	}
+	return nil
+}
+
+func fetchReactionGIF(cfg *config.Config, ep string) []byte {
 	if ep == "" {
 		return nil
 	}
-	validGIF := func(rawURL string, b []byte) bool {
+	validNonGiphy := func(rawURL string, b []byte) bool {
 		if strings.Contains(strings.ToLower(rawURL), "giphy.com") {
 			return false
 		}
-		return len(b) > 4096 && strings.HasPrefix(string(b[:6]), "GIF8")
+		return validGIFBytes(b)
 	}
 	tryNekosBest := func() []byte {
 		var nb struct {
@@ -40,11 +128,23 @@ func fetchReactionGIF(ep string) []byte {
 			} `json:"results"`
 		}
 		if err := httpGetJSON("https://nekos.best/api/v2/"+ep, &nb); err == nil && len(nb.Results) > 0 && nb.Results[0].URL != "" {
-			if b, err := httpGetBytes(nb.Results[0].URL); err == nil && validGIF(nb.Results[0].URL, b) {
+			if b, err := httpGetBytes(nb.Results[0].URL); err == nil && validNonGiphy(nb.Results[0].URL, b) {
 				return b
 			}
 		}
 		return nil
+	}
+	tryKlipy := func() []byte {
+		if cfg == nil || cfg.KlipyAPIKey == "" {
+			return nil
+		}
+		return fetchKlipyGIF(cfg.KlipyAPIKey, "anime "+ep)
+	}
+	tryGiphy := func() []byte {
+		if cfg == nil || cfg.GiphyAPIKey == "" {
+			return nil
+		}
+		return fetchGiphyGIF(cfg.GiphyAPIKey, "anime "+ep)
 	}
 	tryWaifu := func() []byte {
 		wep := ep
@@ -55,7 +155,7 @@ func fetchReactionGIF(ep string) []byte {
 			URL string `json:"url"`
 		}
 		if err := httpGetJSON("https://api.waifu.pics/sfw/"+wep, &wp); err == nil && wp.URL != "" {
-			if b, err := httpGetBytes(wp.URL); err == nil && validGIF(wp.URL, b) {
+			if b, err := httpGetBytes(wp.URL); err == nil && validNonGiphy(wp.URL, b) {
 				return b
 			}
 		}
@@ -66,14 +166,14 @@ func fetchReactionGIF(ep string) []byte {
 			URL string `json:"url"`
 		}
 		if err := httpGetJSON("https://api.otakugifs.xyz/gif?reaction="+ep, &og); err == nil && og.URL != "" {
-			if b, err := httpGetBytes(og.URL); err == nil && validGIF(og.URL, b) {
+			if b, err := httpGetBytes(og.URL); err == nil && validNonGiphy(og.URL, b) {
 				return b
 			}
 		}
 		return nil
 	}
 
-	for _, fn := range []func() []byte{tryNekosBest, tryWaifu, tryOtakuGifs} {
+	for _, fn := range []func() []byte{tryNekosBest, tryKlipy, tryGiphy, tryWaifu, tryOtakuGifs} {
 		if b := fn(); len(b) > 0 {
 			return b
 		}
@@ -125,8 +225,8 @@ func registerResenha(r *Registry) {
 				ctx.React(spec.Emoji)
 				caption := fmt.Sprintf("%s %s *%s* %s!", spec.Emoji, mentionTag(ctx.Sender), spec.Verb, mentionTag(target))
 
-				// 1. Tenta API de GIFs (waifu.pics / nekos.best)
-				gifBytes := fetchReactionGIF(spec.WaifuEP)
+				// 1. Tenta API de GIFs (nekos.best / klipy / giphy / waifu.pics)
+				gifBytes := fetchReactionGIF(ctx.Config, spec.WaifuEP)
 				// 2. Fallback para GIF local se offline ou falhar
 				if len(gifBytes) == 0 && spec.GifFile != "" {
 					gifPath := filepath.Join(ctx.Config.RootDir, "assets", "gifs", spec.GifFile)
@@ -459,6 +559,29 @@ func registerResenha(r *Registry) {
 			}
 			img, err := renderRankCard("TOP "+strings.ToUpper(ctx.CmdName), entries, colAmber)
 			return sendCard(ctx, img, err, sb.String(), mentions...)
+		},
+	})
+
+	r.Register(&Command{
+		Name: "gif", Aliases: []string{"giphy", "klipy"}, Category: "resenha",
+		Description: "Busca um GIF no Klipy ou Giphy (.gif <termo>)",
+		Execute: func(ctx *Context) error {
+			if ctx.Q == "" {
+				return ctx.Reply("❗ Informe o que buscar. Ex: `.gif gato`")
+			}
+			ctx.React("🎞️")
+			gifBytes := fetchKlipyGIF(ctx.Config.KlipyAPIKey, ctx.Q)
+			if len(gifBytes) == 0 {
+				gifBytes = fetchGiphyGIF(ctx.Config.GiphyAPIKey, ctx.Q)
+			}
+			if len(gifBytes) == 0 {
+				return ctx.Reply("❌ Nenhum GIF encontrado (ou configure `KLIPY_API_KEY` / `GIPHY_API_KEY`).")
+			}
+			mp4, err := runFFmpeg(ctx, gifBytes, "gif", "mp4", []string{"-movflags", "faststart", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"})
+			if err != nil {
+				return ctx.Reply("❌ Erro ao converter GIF.")
+			}
+			return ctx.SendVideo(mp4, "🎞️ "+ctx.Q, true)
 		},
 	})
 }

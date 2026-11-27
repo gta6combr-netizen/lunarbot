@@ -34,6 +34,8 @@ type Config struct {
 	RapidAPIKey        string       `json:"rapidApiKey"`
 	ElevenLabsAPIKey   string       `json:"elevenLabsApiKey"`
 	ElevenLabsVoiceID  string       `json:"elevenLabsVoiceId"`
+	GiphyAPIKey        string       `json:"giphyApiKey"`
+	KlipyAPIKey        string       `json:"klipyApiKey"`
 	Moeda              MoedaConfig  `json:"moeda"`
 	Niveis             NiveisConfig `json:"niveis"`
 	RootDir            string       `json:"-"`
@@ -95,6 +97,12 @@ func Load(rootDir string) (*Config, error) {
 	}
 	if cfg.ElevenLabsVoiceID == "" {
 		cfg.ElevenLabsVoiceID = "FGY2WhTYpPnrIDTdsKH5"
+	}
+	if v := os.Getenv("GIPHY_API_KEY"); v != "" {
+		cfg.GiphyAPIKey = v
+	}
+	if v := os.Getenv("KLIPY_API_KEY"); v != "" {
+		cfg.KlipyAPIKey = v
 	}
 
 	if cfg.Prefix == "" {
