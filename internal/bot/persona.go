@@ -187,6 +187,10 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 		strings.Contains(lower, "cria") || strings.Contains(lower, "criar") ||
 		strings.Contains(lower, "transforma") || strings.Contains(lower, "converte") ||
 		strings.Contains(lower, "vira")
+	isExplain := strings.Contains(lower, "explica") || strings.Contains(lower, "oq é") ||
+		strings.Contains(lower, "oq e") || strings.Contains(lower, "o que é") ||
+		strings.Contains(lower, "o que e") || strings.Contains(lower, "pra que serve") ||
+		strings.Contains(lower, "como funciona")
 	switch {
 	case wantsMakeSticker && strings.Contains(lower, "figurinha") && (strings.Contains(lower, "audio") || strings.Contains(lower, "áudio")):
 		return "figaudio", rawFields, rawAfterLunar, true
@@ -194,7 +198,7 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 		return "stickercirculo", rawFields, rawAfterLunar, true
 	case wantsMakeSticker && (strings.Contains(lower, "figurinha") || strings.Contains(lower, "sticker")):
 		return "sticker", rawFields, rawAfterLunar, true
-	case strings.Contains(lower, "menu") || strings.Contains(lower, "comandos") || strings.Contains(lower, "lista de comandos"):
+	case !isExplain && (strings.Contains(lower, "menu") || strings.Contains(lower, "comandos") || strings.Contains(lower, "lista de comandos")):
 		return "menu", nil, "", true
 	case strings.Contains(lower, "revela") || strings.Contains(lower, "visualização única") || strings.Contains(lower, "visualizacao unica"):
 		return "revela", nil, "", true
