@@ -62,9 +62,13 @@ func (c *Client) isLunarTriggered(evt *events.Message, body string) bool {
 	if evt.Info.IsFromMe {
 		return false
 	}
-	// In private chat (PV), always respond naturally to messages directed to Lunar
+	// In private chat (PV), only respond to actual text or image/sticker messages (ignore empty/protocol events)
 	if evt.Info.Chat.Server != types.GroupServer {
-		return true
+		if body != "" {
+			return true
+		}
+		u := unwrapMsg(evt.Message)
+		return u != nil && (u.ImageMessage != nil || u.StickerMessage != nil)
 	}
 	if body != "" && lunarMentionRE.MatchString(body) {
 		return true
@@ -271,7 +275,7 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 		if len(imgData) > 0 {
 			body = "(enviou uma figurinha ou imagem, reaja ao que você vê nela)"
 		} else {
-			body = "oi"
+			return "", nil, ""
 		}
 	}
 
