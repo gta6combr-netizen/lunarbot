@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"nyxbot-go/internal/db"
 	"nyxbot-go/internal/logger"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/mdp/qrterminal/v3"
 	qrcode "github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
@@ -60,12 +62,25 @@ type Client struct {
 
 func NewClient(cfg *config.Config, database *db.DB, reg *commands.Registry, useCode bool, restartFn func()) (*Client, error) {
 	ctx := context.Background()
-	sessionDB := filepath.Join(cfg.RootDir, "database", "whatsmeow.db")
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", sessionDB)
-
-	container, err := sqlstore.New(ctx, "sqlite", dsn, waLog.Noop)
-	if err != nil {
-		return nil, err
+	var container *sqlstore.Container
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		pgDB, err := sql.Open("pgx", dbURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open postgres session db: %w", err)
+		}
+		container = sqlstore.NewWithDB(pgDB, "postgres", waLog.Noop)
+		if err := container.Upgrade(ctx); err != nil {
+			pgDB.Close()
+			return nil, fmt.Errorf("failed to upgrade postgres session db: %w", err)
+		}
+	} else {
+		sessionDB := filepath.Join(cfg.RootDir, "database", "whatsmeow.db")
+		dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", sessionDB)
+		var err error
+		container, err = sqlstore.New(ctx, "sqlite", dsn, waLog.Noop)
+		if err != nil {
+			return nil, err
+		}
 	}
 	deviceStore, err := container.GetFirstDevice(ctx)
 	if err != nil {
