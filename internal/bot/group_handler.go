@@ -3,10 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,19 +14,10 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
-const welcomeCaption = `🎰 *BEM-VINDO A LAS VEGAS* 🎰
-╰──────────────────────────╯
-💸 *A sorte está do seu lado.*
-🎲 *Vamos jogar?*
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-📌 *Para começar, se apresente:*
-🃏 Foto ou vídeo
-👤 Nome
-🎂 Idade
-📍 Cidade
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-💰 *A mesa está aberta.*
-♠️ *Lunar Bot te dá as boas-vindas.*`
+const welcomeCaption = `𝗦𝗘𝗝𝗔 𝗠𝗨𝗜𝗧𝗢 𝗕𝗘𝗠 𝗩𝗜𝗡𝗗𝗢 (𝗔̀) 𝗔̀𝗢 𝗟𝗔𝗧𝗔𝗠 ! 💙🖤
+
+Você passou no teste e agora veste o manto da guilda. Aqui dentro não tem moleza é treino, call, e é decidir a partida quando ela aperta.
+Se adapta rápido, escuta o time, e *lembre-se:* na Tam a gente joga junto, evolui junto e cobra junto. Errou? Treina. Acertou? Repete até virar padrão. Patente não define player, jogabilidade e visão de jogo define. Mostra porque a gente abriu vaga pra você. Bora subir de nível e levar o nome Latam pro topo!`
 
 var (
 	welcomeMu  sync.Mutex
@@ -85,22 +72,6 @@ func (c *Client) sendWelcome(groupID, participant types.JID) {
 	welcomeLog[key] = time.Now()
 	welcomeMu.Unlock()
 
-	var imgBytes []byte
-	if pic, err := c.wa.GetProfilePictureInfo(context.Background(), participant, &whatsmeow.GetProfilePictureParams{}); err == nil && pic != nil && pic.URL != "" {
-		if resp, err := http.Get(pic.URL); err == nil {
-			imgBytes, _ = io.ReadAll(io.LimitReader(resp.Body, 5<<20))
-			resp.Body.Close()
-		}
-	}
-	if len(imgBytes) == 0 {
-		defPath := filepath.Join(c.cfg.RootDir, "assets", "welcome-default.jpeg")
-		imgBytes, _ = os.ReadFile(defPath)
-	}
-
-	caption := fmt.Sprintf("@%s\n\n%s", participant.User, welcomeCaption)
-	if len(imgBytes) > 0 {
-		_ = c.SendImage(groupID, imgBytes, caption, nil, participant.String())
-	} else {
-		_ = c.SendText(groupID, caption, participant.String())
-	}
+	text := fmt.Sprintf("@%s %s", participant.User, welcomeCaption)
+	_ = c.SendText(groupID, text, participant.String())
 }
