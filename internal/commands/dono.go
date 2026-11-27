@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"nyxbot-go/internal/config"
 	"nyxbot-go/internal/logger"
 
 	"go.mau.fi/whatsmeow/types"
@@ -54,20 +55,35 @@ func registerDono(r *Registry) {
 
 	r.Register(&Command{
 		Name: "addvip", Category: "dono", Dono: true,
-		Description: "Adiciona usuário VIP/Premium (.addvip @user [dias])",
+		Description: "Adiciona usuário VIP/Premium (.addvip,dias,numero ou .addvip @user [dias])",
 		Execute: func(ctx *Context) error {
 			target := resolveTarget(ctx)
-			if target.IsEmpty() {
-				return ctx.Reply("❗ Marque ou informe o número.")
-			}
 			days := 30
-			for _, a := range ctx.Args {
-				if v, err := strconv.Atoi(a); err == nil && v > 0 && v < 3650 {
+			tokens := strings.Fields(strings.ReplaceAll(ctx.Q, ",", " "))
+			for _, tok := range tokens {
+				tok = strings.TrimSpace(tok)
+				if tok == "" || strings.HasPrefix(tok, "@") {
+					continue
+				}
+				digits := config.CleanNumber(tok)
+				if len(digits) >= 8 && digits == tok || (len(digits) >= 10 && target.IsEmpty()) {
+					if target.IsEmpty() {
+						target = types.NewJID(digits, types.DefaultUserServer)
+					}
+					continue
+				}
+				if v, err := strconv.Atoi(tok); err == nil && v >= 0 {
 					days = v
 				}
 			}
+			if target.IsEmpty() {
+				return ctx.Reply("❗ Use `.addvip,dias,numero` ou `.addvip @user [dias]`.")
+			}
 			_ = ctx.DB.AddPremium(target.String(), days)
-			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💎 %s agora é *VIP* por %d dias!", mentionTag(target), days), target.String())
+			if days == 0 {
+				return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💎 %s agora é *VIP permanente*!", mentionTag(target)), target.String())
+			}
+			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💎 %s agora é *VIP* por *%d dias*!", mentionTag(target), days), target.String())
 		},
 	})
 

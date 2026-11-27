@@ -363,6 +363,17 @@ func (c *Client) handleMessage(evt *events.Message) {
 		if len(fields) > 0 {
 			cmdName = strings.ToLower(fields[0])
 			args = fields[1:]
+			if strings.Contains(cmdName, ",") && c.registry.Get(cmdName) == nil {
+				parts := strings.Split(cmdName, ",")
+				cmdName = strings.TrimSpace(parts[0])
+				var extra []string
+				for _, p := range parts[1:] {
+					if p = strings.TrimSpace(p); p != "" {
+						extra = append(extra, p)
+					}
+				}
+				args = append(extra, args...)
+			}
 			q = strings.Join(args, " ")
 		}
 	}
