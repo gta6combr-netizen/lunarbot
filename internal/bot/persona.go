@@ -154,6 +154,10 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 				return "x", []string{u}, u, true
 			case strings.Contains(ul, "pinterest.") || strings.Contains(ul, "pin.it"):
 				return "pinterest", []string{u}, u, true
+			case strings.Contains(ul, "kwai.com"):
+				return "kwai", []string{u}, u, true
+			case strings.Contains(ul, "vimeo.com") || strings.Contains(ul, "twitch.tv") || strings.Contains(ul, "dailymotion.com") || strings.Contains(ul, "reddit.com") || strings.Contains(ul, "snapchat.com"):
+				return "baixar", []string{u}, u, true
 			}
 		}
 	}

@@ -291,7 +291,7 @@ func registerDownloads(r *Registry) {
 				}
 				ctx.React("📥")
 				if ctx.Config.RapidAPIKey != "" {
-					if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
+					if data, isImg, err := downloadRapidSocialMedia(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
 						if isImg {
 							return ctx.SendImage(data, "✅ Download concluído!")
 						}
@@ -310,6 +310,8 @@ func registerDownloads(r *Registry) {
 	socialDownloader("instagram", []string{"ig", "insta", "reels"}, "Baixa Reels/post/story do Instagram")
 	socialDownloader("facebook", []string{"fb"}, "Baixa vídeo/Reels do Facebook")
 	socialDownloader("x", []string{"twitter", "tw"}, "Baixa vídeo/GIF/foto do X (Twitter)")
+	socialDownloader("kwai", []string{"kw"}, "Baixa vídeo do Kwai")
+	socialDownloader("baixar", []string{"dl", "alldl", "vimeo", "reddit", "twitch", "dailymotion"}, "Baixa vídeo/mídia de qualquer link suportado")
 
 	r.Register(&Command{
 		Name: "pinterest", Aliases: []string{"pin"}, Category: "downloads",
@@ -321,7 +323,7 @@ func registerDownloads(r *Registry) {
 			if strings.HasPrefix(ctx.Q, "http") {
 				ctx.React("📥")
 				if ctx.Config.RapidAPIKey != "" {
-					if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
+					if data, isImg, err := downloadRapidSocialMedia(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
 						if isImg {
 							return ctx.SendImage(data, "📌 Pinterest")
 						}

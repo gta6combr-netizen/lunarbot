@@ -1,8 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -19,7 +23,11 @@ var (
 
 func isSocialMediaURL(rawURL string) bool {
 	l := strings.ToLower(rawURL)
-	for _, d := range []string{"instagram.com", "tiktok.com", "facebook.com", "fb.watch", "fb.com", "x.com", "twitter.com", "pinterest.", "pin.it"} {
+	for _, d := range []string{
+		"instagram.com", "tiktok.com", "facebook.com", "fb.watch", "fb.com",
+		"x.com", "twitter.com", "pinterest.", "pin.it", "kwai.com",
+		"vimeo.com", "twitch.tv", "dailymotion.com", "reddit.com", "snapchat.com", "linkedin.com", "bilibili.com",
+	} {
 		if strings.Contains(l, d) {
 			return true
 		}
@@ -122,10 +130,179 @@ func downloadRapidAllInOne(apiKey, rawURL string) ([]byte, bool, error) {
 	return nil, false, lastErr
 }
 
+func extractFirstMediaURL(b []byte) string {
+	var anyJSON any
+	if err := jsonUnmarshal(b, &anyJSON); err != nil {
+		return ""
+	}
+	var fallback string
+	var walk func(v any) string
+	walk = func(v any) string {
+		switch x := v.(type) {
+		case map[string]any:
+			for _, k := range []string{"download_url", "video_url", "video", "play", "hd", "sd", "url", "image", "img", "src"} {
+				if val, ok := x[k]; ok {
+					if s, ok := val.(string); ok && strings.HasPrefix(s, "http") {
+						sl := strings.ToLower(s)
+						if strings.Contains(sl, ".mp4") || k == "download_url" || k == "video_url" || k == "video" || k == "play" || k == "hd" {
+							return s
+						}
+						if fallback == "" && !strings.Contains(sl, "thumb") && !strings.Contains(sl, "avatar") {
+							fallback = s
+						}
+					}
+				}
+			}
+			for _, k := range []string{"items", "medias", "formats", "links", "data", "result"} {
+				if val, ok := x[k]; ok {
+					if hit := walk(val); hit != "" {
+						return hit
+					}
+				}
+			}
+			for _, val := range x {
+				if hit := walk(val); hit != "" {
+					return hit
+				}
+			}
+		case []any:
+			for _, item := range x {
+				if hit := walk(item); hit != "" {
+					return hit
+				}
+			}
+		case string:
+			if strings.HasPrefix(x, "http") && fallback == "" {
+				fallback = x
+			}
+		}
+		return ""
+	}
+	if hit := walk(anyJSON); hit != "" {
+		return hit
+	}
+	return fallback
+}
+
+func rapidGetMedia(host string, paths []string, apiKey, rawURL string) ([]byte, bool, error) {
+	headers := map[string]string{
+		"X-RapidAPI-Key":  apiKey,
+		"X-RapidAPI-Host": host,
+		"User-Agent":      "Mozilla/5.0",
+	}
+	var lastErr error
+	for _, p := range paths {
+		ep := "https://" + host + p + "?url=" + url.QueryEscape(rawURL)
+		b, err := httpGetWithHeaders(ep, headers)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		mediaURL := extractFirstMediaURL(b)
+		if mediaURL == "" {
+			lastErr = fmt.Errorf("mídia não encontrada na resposta")
+			continue
+		}
+		data, err := httpGetBytes(mediaURL)
+		if err != nil || len(data) < 512 {
+			lastErr = fmt.Errorf("erro ao baixar mídia: %v", err)
+			continue
+		}
+		return data, looksLikeImage(data, ""), nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("falha na RapidAPI (%s)", host)
+	}
+	return nil, false, lastErr
+}
+
+func downloadRapidPinterest(apiKey, rawURL string) ([]byte, bool, error) {
+	return rapidGetMedia("pinterest-video-and-image-downloader.p.rapidapi.com", []string{"/", "/pinterest", "/download", "/media"}, apiKey, rawURL)
+}
+
+func downloadRapidKwai(apiKey, rawURL string) ([]byte, bool, error) {
+	return rapidGetMedia("kwai-downloader1.p.rapidapi.com", []string{"/", "/kwai", "/download", "/get-kwai-data"}, apiKey, rawURL)
+}
+
+func downloadRapidAllVideo(apiKey, rawURL string) ([]byte, bool, error) {
+	const host = "all-video-downloader1.p.rapidapi.com"
+	var lastErr error
+	for _, p := range []string{"/all", "/download", "/"} {
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		_ = w.WriteField("url", rawURL)
+		_ = w.Close()
+
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://"+host+p, &body)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Content-Type", w.FormDataContentType())
+		req.Header.Set("X-RapidAPI-Key", apiKey)
+		req.Header.Set("X-RapidAPI-Host", host)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+
+		cl := &http.Client{Timeout: 30 * time.Second}
+		resp, err := cl.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+		mediaURL := extractFirstMediaURL(b)
+		if mediaURL == "" {
+			lastErr = fmt.Errorf("mídia não encontrada")
+			continue
+		}
+		data, err := httpGetBytes(mediaURL)
+		if err != nil || len(data) < 512 {
+			lastErr = fmt.Errorf("erro ao baixar mídia: %v", err)
+			continue
+		}
+		return data, looksLikeImage(data, ""), nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("falha na All Video Downloader")
+	}
+	return nil, false, lastErr
+}
+
+func downloadRapidSocialMedia(apiKey, rawURL string) ([]byte, bool, error) {
+	if apiKey == "" {
+		return nil, false, fmt.Errorf("rapidapi key missing")
+	}
+	l := strings.ToLower(rawURL)
+	if strings.Contains(l, "pinterest.") || strings.Contains(l, "pin.it") {
+		if d, img, err := downloadRapidPinterest(apiKey, rawURL); err == nil {
+			return d, img, nil
+		}
+		if d, img, err := downloadRapidAllInOne(apiKey, rawURL); err == nil {
+			return d, img, nil
+		}
+		return downloadRapidAllVideo(apiKey, rawURL)
+	}
+	if strings.Contains(l, "kwai.com") {
+		if d, img, err := downloadRapidKwai(apiKey, rawURL); err == nil {
+			return d, img, nil
+		}
+		return downloadRapidAllVideo(apiKey, rawURL)
+	}
+	if d, img, err := downloadRapidAllInOne(apiKey, rawURL); err == nil {
+		return d, img, nil
+	}
+	return downloadRapidAllVideo(apiKey, rawURL)
+}
+
 func downloadVideoFromURL(ctx *Context, rawURL string) ([]byte, error) {
-	// 0. RapidAPI All-in-One for Instagram, TikTok, Facebook, X, Pinterest
+	// 0. RapidAPI social downloaders (All-in-One, Pinterest, Kwai, All Video)
 	if ctx.Config.RapidAPIKey != "" && isSocialMediaURL(rawURL) {
-		if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, rawURL); err == nil && !isImg && len(data) > 1024 {
+		if data, isImg, err := downloadRapidSocialMedia(ctx.Config.RapidAPIKey, rawURL); err == nil && !isImg && len(data) > 1024 {
 			return data, nil
 		}
 	}
