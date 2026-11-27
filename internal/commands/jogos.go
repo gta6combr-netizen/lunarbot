@@ -90,6 +90,14 @@ func registerJogos(r *Registry) {
 			syms := []string{"🍒", "🍋", "🍇", "💎", "7️⃣", "🔔"}
 			names := []string{"Cereja", "Limão", "Uva", "Diamante", "7", "Sino"}
 			ia, ib, ic := randInt(0, 5), randInt(0, 5), randInt(0, 5)
+			usedClover := false
+			if ia != ib && ib != ic && ia != ic {
+				if newInv, ok := consumeInventoryItem(u.Inventory, "Trevo"); ok {
+					u.Inventory = newInv
+					usedClover = true
+					ia, ib, ic = randInt(0, 5), randInt(0, 5), randInt(0, 5)
+				}
+			}
 			a, b, c := syms[ia], syms[ib], syms[ic]
 			var delta int64
 			var msg string
@@ -108,6 +116,9 @@ func registerJogos(r *Registry) {
 				delta = -bet
 				u.Losses++
 				msg = fmt.Sprintf("🎰 *Perdeu!* -%d %s", bet, ctx.Config.Moeda.Simbolo)
+			}
+			if usedClover {
+				msg = "🍀 *Trevo da Sorte usado!* " + msg
 			}
 			u.Coins += delta
 			if u.Coins < 0 {

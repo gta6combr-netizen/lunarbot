@@ -298,7 +298,7 @@ func registerResenha(r *Registry) {
 				comment = "Meio torto, mas vai que..."
 			}
 			cap := fmt.Sprintf("%s *SHIP*\n%s + %s = *%d%%*\n%s", heart, mentionTag(ctx.Sender), mentionTag(t), pct, comment)
-			img, err := renderMeterCard("COMPATIBILIDADE (SHIP)", fmt.Sprintf("%s + %s", ctx.Sender.User, t.User), pct, comment, colRose)
+			img, err := renderVersusCard("MODO CASAL", "COMPATIBILIDADE", "@"+ctx.Sender.User, "@"+t.User, fmt.Sprintf("%d%%", pct), comment, fetchAvatar(ctx, ctx.Sender), fetchAvatar(ctx, t), colRose)
 			return sendCard(ctx, img, err, cap, ctx.Sender.String(), t.String())
 		},
 	})
@@ -427,7 +427,7 @@ func registerResenha(r *Registry) {
 			uL.Losses++
 			_ = ctx.DB.SaveUser(uL)
 			cap := fmt.Sprintf("⚔️ *X1 PESADO!*\n%s amassou %s na porrada e levou *+40 %s* 🏆", mentionTag(winner), mentionTag(loser), ctx.Config.Moeda.Simbolo)
-			img, err := renderGameCard("DUELO X1", fmt.Sprintf("%s venceu!", winner.User), []string{fmt.Sprintf("%s amassou %s e levou +40 %s", winner.User, loser.User, ctx.Config.Moeda.Simbolo)}, colAmber)
+			img, err := renderVersusCard("DUELO X1", "Vencedor: @"+winner.User, "@"+ctx.Sender.User, "@"+target.User, "VS", fmt.Sprintf("%s venceu e levou +40 %s!", winner.User, ctx.Config.Moeda.Simbolo), fetchAvatar(ctx, ctx.Sender), fetchAvatar(ctx, target), colAmber)
 			return sendCard(ctx, img, err, cap, winner.String(), loser.String())
 		},
 	})
@@ -440,6 +440,13 @@ func registerResenha(r *Registry) {
 				return ctx.Reply("❗ Marca quem você quer assaltar kkk")
 			}
 			victim := ctx.DB.GetUser(target.String())
+			if newInv, shielded := consumeInventoryItem(victim.Inventory, "Escudo"); shielded {
+				victim.Inventory = newInv
+				_ = ctx.DB.SaveUser(victim)
+				cap := fmt.Sprintf("🛡️ %s tinha um *Escudo* da loja e bloqueou o assalto de %s!", mentionTag(target), mentionTag(ctx.Sender))
+				img, err := renderGameCard("ASSALTO BLOQUEADO", "Escudo Ativado!", []string{fmt.Sprintf("@%s gastou 1 Escudo e protegeu suas moedas!", target.User)}, colCyan)
+				return sendCard(ctx, img, err, cap, target.String(), ctx.Sender.String())
+			}
 			if victim.Coins < 20 {
 				return ctx.Reply("💸 Essa pessoa tá lisa demais, nem vale a pena roubar.")
 			}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/color"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -733,6 +734,31 @@ func registerMidias(r *Registry) {
 				return ctx.Reply("❌ Erro ao gerar áudio: " + err.Error())
 			}
 			return ctx.SendAudio(ogg, true)
+		},
+	})
+
+	r.Register(&Command{
+		Name: "ttp", Aliases: []string{"attp", "figtexto"}, Category: "midias",
+		Description: "Cria figurinha de texto estilizada (.ttp <texto>)",
+		Execute: func(ctx *Context) error {
+			if ctx.Q == "" {
+				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.ttp bom dia`")
+			}
+			ctx.React("✨")
+			palette := []color.RGBA{colText, colCyan, colAmber, color.RGBA{244, 114, 182, 255}, colEmerald}
+			fg := palette[0]
+			if ctx.CmdName == "attp" {
+				fg = palette[randInt(1, len(palette)-1)]
+			}
+			pngData, err := renderTextStickerPNG(ctx.Q, fg)
+			if err != nil {
+				return ctx.Reply("❌ Erro ao gerar texto.")
+			}
+			webp, err := runFFmpeg(ctx, pngData, "png", "webp", []string{"-vcodec", "libwebp", "-lossless", "1", "-an"})
+			if err != nil {
+				return ctx.Reply("❌ Erro ao converter figurinha.")
+			}
+			return ctx.SendSticker(webp)
 		},
 	})
 }

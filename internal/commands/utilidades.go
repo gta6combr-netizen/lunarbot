@@ -257,7 +257,7 @@ func registerUtilidades(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "perfil", Aliases: []string{"profile"}, Category: "utilidades", Description: "Mostra seu perfil de economia e nível",
+		Name: "perfil", Aliases: []string{"profile", "nivel"}, Category: "utilidades", Description: "Mostra seu perfil de economia e nível",
 		Execute: func(ctx *Context) error {
 			target := resolveTarget(ctx)
 			if target.IsEmpty() {
@@ -269,7 +269,11 @@ func registerUtilidades(r *Registry) {
 			if u.Spouse != "" {
 				spouseTxt = "@" + strings.Split(u.Spouse, "@")[0]
 			}
-			return ctx.Reply(fmt.Sprintf(
+			dispName := u.Nome
+			if dispName == "" && target == ctx.Sender {
+				dispName = ctx.PushName
+			}
+			cap := fmt.Sprintf(
 				"👤 *PERFIL*\n\n"+
 					"🪙 %s: *%d* %s\n"+
 					"⭐ Nível: *%d* (%d/%d XP)\n"+
@@ -277,7 +281,9 @@ func registerUtilidades(r *Registry) {
 					"💍 Estado civil: %s",
 				ctx.Config.Moeda.Nome, u.Coins, ctx.Config.Moeda.Simbolo,
 				u.Level, u.XP, need, u.Wins, u.Losses, spouseTxt,
-			))
+			)
+			img, err := renderProfileCard(dispName, target.User, u.Coins, u.XP, need, u.Level, u.Wins, u.Losses, spouseTxt, u.Inventory, fetchAvatar(ctx, target))
+			return sendCard(ctx, img, err, cap, target.String())
 		},
 	})
 
@@ -399,7 +405,15 @@ func registerUtilidades(r *Registry) {
 				"4": {"💎 Passe VIP (1d)", 2000},
 			}
 			if ctx.Q == "" {
-				return ctx.Reply("🛒 *LOJA LUNAR*\n\n1. 💍 Aliança — 500\n2. 🛡️ Escudo — 300\n3. 🍀 Trevo da Sorte — 250\n4. 💎 Passe VIP (1d) — 2000\n\nUse: *.loja <número>*")
+				cap := "🛒 *LOJA LUNAR*\n\n1. 💍 Aliança — 500\n2. 🛡️ Escudo — 300 (bloqueia .roubar)\n3. 🍀 Trevo da Sorte — 250 (reroll no .slot)\n4. 💎 Passe VIP (1d) — 2000\n\nUse: *.loja <número>*"
+				img, err := renderGameCard("LOJA LUNAR", "Itens & Power-ups", []string{
+					"1. Aliança - 500",
+					"2. Escudo - 300 (bloqueia .roubar)",
+					"3. Trevo da Sorte - 250 (reroll no .slot)",
+					"4. Passe VIP (1d) - 2000 (ativa VIP na hora)",
+					"Use .loja <numero> para comprar",
+				}, colAmber)
+				return sendCard(ctx, img, err, cap)
 			}
 			it, ok := items[ctx.Args[0]]
 			if !ok {
@@ -416,6 +430,56 @@ func registerUtilidades(r *Registry) {
 				_ = ctx.DB.AddPremium(ctx.Sender.String(), 1)
 			}
 			return ctx.Reply(fmt.Sprintf("✅ Você comprou *%s* por *%d*!", it.name, it.price))
+		},
+	})
+
+	workCooldown := make(map[string]time.Time)
+	r.Register(&Command{
+		Name: "trabalhar", Aliases: []string{"work"}, Category: "utilidades", Description: "Trabalha e ganha LunarCoins (1h cooldown)",
+		Execute: func(ctx *Context) error {
+			key := ctx.Sender.String()
+			if last, ok := workCooldown[key]; ok && time.Since(last) < time.Hour {
+				rem := (time.Hour - time.Since(last)).Round(time.Minute)
+				return ctx.Reply(fmt.Sprintf("⏳ Descanse um pouco! Volte em *%s*.", rem))
+			}
+			workCooldown[key] = time.Now()
+			earned := int64(randInt(30, 95))
+			bal := ctx.DB.AddCoins(key, earned)
+			jobs := []string{"fez freela de dev", "editou vídeo pro TikTok", "entregou açaí", "moderou o grupo", "vendeu figurinha rara"}
+			job := jobs[randInt(0, len(jobs)-1)]
+			cap := fmt.Sprintf("💼 Você %s e ganhou *+%d %s*!\n💰 Saldo: *%d*", job, earned, ctx.Config.Moeda.Simbolo, bal)
+			img, err := renderGameCard("TRABALHO", fmt.Sprintf("+%d %s", earned, ctx.Config.Moeda.Simbolo), []string{"Você " + job + "!", fmt.Sprintf("Saldo atual: %d %s", bal, ctx.Config.Moeda.Simbolo)}, colEmerald)
+			return sendCard(ctx, img, err, cap)
+		},
+	})
+
+	r.Register(&Command{
+		Name: "pagar", Aliases: []string{"pix", "transferir"}, Category: "utilidades", Description: "Transfere LunarCoins (.pagar @pessoa <valor>)",
+		Execute: func(ctx *Context) error {
+			target := resolveTarget(ctx)
+			if target.IsEmpty() || target == ctx.Sender {
+				return ctx.Reply("❗ Marque quem vai receber: `.pagar @pessoa <valor>`")
+			}
+			var amount int64
+			for _, a := range ctx.Args {
+				if !strings.HasPrefix(a, "@") {
+					if v, err := strconv.ParseInt(a, 10, 64); err == nil && v > 0 {
+						amount = v
+						break
+					}
+				}
+			}
+			if amount <= 0 {
+				return ctx.Reply("❗ Informe um valor válido.")
+			}
+			u := ctx.DB.GetUser(ctx.Sender.String())
+			if u.Coins < amount {
+				return ctx.Reply(fmt.Sprintf("❌ Saldo insuficiente! Você tem *%d*.", u.Coins))
+			}
+			u.Coins -= amount
+			_ = ctx.DB.SaveUser(u)
+			ctx.DB.AddCoins(target.String(), amount)
+			return ctx.Bot.SendText(ctx.From, fmt.Sprintf("💸 %s transferiu *%d %s* para %s!", mentionTag(ctx.Sender), amount, ctx.Config.Moeda.Simbolo, mentionTag(target)), ctx.Sender.String(), target.String())
 		},
 	})
 

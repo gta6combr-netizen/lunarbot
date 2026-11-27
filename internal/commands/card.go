@@ -599,6 +599,161 @@ func renderCantadaCard(quote, fromName, toName string, fromAvatar, toAvatar []by
 	return encodePNG(img)
 }
 
+func consumeInventoryItem(inv []string, match string) ([]string, bool) {
+	for i, it := range inv {
+		if strings.Contains(strings.ToLower(it), strings.ToLower(match)) {
+			out := make([]string, 0, len(inv)-1)
+			out = append(out, inv[:i]...)
+			out = append(out, inv[i+1:]...)
+			return out, true
+		}
+	}
+	return inv, false
+}
+
+func renderProfileCard(name, jidTag string, coins, xp, needXP, level, wins, losses int64, spouse string, inv []string, avatar []byte) ([]byte, error) {
+	w, h := 880, 460
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	fillRect(img, 0, 0, w, h, colBG)
+	fillRoundedRect(img, 24, 24, w-48, h-48, 24, colPurple)
+	fillRoundedRect(img, 27, 27, w-54, h-54, 22, colCard)
+
+	fTag := makeFace(true, 18)
+	fName := makeFace(true, 32)
+	fSub := makeFace(false, 22)
+	fStat := makeFace(true, 26)
+	fFoot := makeFace(false, 16)
+	defer func() {
+		for _, f := range []font.Face{fTag, fName, fSub, fStat, fFoot} {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
+
+	drawCircularAvatar(img, avatar, 130, 140, 62, "L", colPurple)
+
+	dispName := stripEmojiForFont(name)
+	if dispName == "" {
+		dispName = "@" + jidTag
+	}
+	if len(dispName) > 22 {
+		dispName = dispName[:22] + "..."
+	}
+	drawText(img, fName, 224, 118, colText, dispName)
+	drawText(img, fSub, 224, 152, colMuted, fmt.Sprintf("Nivel %d   •   %s", level, stripEmojiForFont(spouse)))
+
+	// XP progress bar
+	barX, barY, barW, barH := 224, 174, 590, 26
+	fillRoundedRect(img, barX, barY, barW, barH, 12, colCardDark)
+	pct := 0.0
+	if needXP > 0 {
+		pct = math.Min(1.0, float64(xp)/float64(needXP))
+	}
+	fw := int(float64(barW) * pct)
+	if fw > 0 && fw < 20 {
+		fw = 20
+	}
+	if fw > 0 {
+		fillRoundedRect(img, barX, barY, fw, barH, 12, colCyan)
+	}
+	drawText(img, fFoot, barX, barY+46, colMuted, fmt.Sprintf("XP: %d / %d", xp, needXP))
+
+	// Stat boxes
+	boxes := []struct {
+		lbl, val string
+		col      color.RGBA
+	}{
+		{"LUNARCOINS", fmt.Sprintf("%d", coins), colAmber},
+		{"VITORIAS", fmt.Sprintf("%d", wins), colEmerald},
+		{"DERROTAS", fmt.Sprintf("%d", losses), colRose},
+		{"ITENS", fmt.Sprintf("%d", len(inv)), colCyan},
+	}
+	bw := 182
+	bx := 56
+	for _, b := range boxes {
+		fillRoundedRect(img, bx, 265, bw, 110, 14, colCardDark)
+		drawCenteredText(img, fTag, bx+bw/2, 300, colMuted, b.lbl)
+		drawCenteredText(img, fStat, bx+bw/2, 344, b.col, b.val)
+		bx += bw + 14
+	}
+
+	drawText(img, fFoot, 56, h-44, colGrid, "LUNAR BOT  •  PERFIL")
+	return encodePNG(img)
+}
+
+func renderVersusCard(tag, title, leftName, rightName, centerBadge, footerText string, leftAv, rightAv []byte, accent color.RGBA) ([]byte, error) {
+	w, h := 880, 440
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	fillRect(img, 0, 0, w, h, colBG)
+	fillRoundedRect(img, 24, 24, w-48, h-48, 24, accent)
+	fillRoundedRect(img, 27, 27, w-54, h-54, 22, colCard)
+
+	fTag := makeFace(true, 18)
+	fTitle := makeFace(true, 30)
+	fCenter := makeFace(true, 44)
+	fName := makeFace(true, 22)
+	fFoot := makeFace(false, 22)
+	defer func() {
+		for _, f := range []font.Face{fTag, fTitle, fCenter, fName, fFoot} {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
+
+	fillRoundedRect(img, 54, 50, 190, 32, 10, accent)
+	drawCenteredText(img, fTag, 149, 72, colBG, strings.ToUpper(stripEmojiForFont(tag)))
+	drawText(img, fTitle, 264, 76, colText, stripEmojiForFont(title))
+
+	drawCircularAvatar(img, leftAv, 210, 200, 68, "1", colCyan)
+	drawCircularAvatar(img, rightAv, w-210, 200, 68, "2", accent)
+
+	drawCenteredText(img, fCenter, w/2, 214, accent, stripEmojiForFont(centerBadge))
+	drawCenteredText(img, fName, 210, 302, colText, stripEmojiForFont(leftName))
+	drawCenteredText(img, fName, w-210, 302, colText, stripEmojiForFont(rightName))
+
+	fillRoundedRect(img, 60, 336, w-120, 56, 14, colCardDark)
+	drawCenteredText(img, fFoot, w/2, 371, colText, stripEmojiForFont(footerText))
+	return encodePNG(img)
+}
+
+func renderTextStickerPNG(text string, fg color.RGBA) ([]byte, error) {
+	const size = 512
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	f := makeFace(true, 58)
+	if f == nil {
+		return nil, fmt.Errorf("font unavailable")
+	}
+	defer f.Close()
+
+	lines := wrapText(f, text, 450)
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("empty text")
+	}
+	if len(lines) > 6 {
+		lines = lines[:6]
+	}
+
+	lineH := 66
+	startY := (size-(len(lines)-1)*lineH)/2 + 18
+	outline := color.RGBA{10, 10, 16, 255}
+	for _, line := range lines {
+		w := font.MeasureString(f, line).Ceil()
+		x := (size - w) / 2
+		for oy := -3; oy <= 3; oy++ {
+			for ox := -3; ox <= 3; ox++ {
+				if ox != 0 || oy != 0 {
+					drawText(img, f, x+ox, startY+oy, outline, line)
+				}
+			}
+		}
+		drawText(img, f, x, startY, fg, line)
+		startY += lineH
+	}
+	return encodePNG(img)
+}
+
 func fetchAvatar(ctx *Context, j types.JID) []byte {
 	if ctx == nil || ctx.Bot == nil || ctx.Bot.Raw() == nil || j.IsEmpty() {
 		return nil
