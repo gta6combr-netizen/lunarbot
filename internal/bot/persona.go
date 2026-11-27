@@ -33,9 +33,9 @@ var lunarMentionRE = regexp.MustCompile(`(?i)\b(l[uv]n?[a40@*]r(\s*bot)?|lu[0o@]
 var (
 	personaHTTP = &http.Client{Timeout: 20 * time.Second}
 	lunarModels = []string{
-		"gemini-3-flash-preview",
 		"gemini-2.5-flash",
 		"gemini-2.5-flash-lite",
+		"gemini-2.0-flash",
 	}
 )
 
@@ -745,7 +745,7 @@ func (c *Client) askLunarGemini(chatID, senderJID, senderName, body string, isDo
 		"contents": contents,
 		"generationConfig": map[string]any{
 			"temperature":     0.85,
-			"maxOutputTokens": 1024,
+			"maxOutputTokens": 2048,
 		},
 	}
 
