@@ -408,7 +408,7 @@ func registerResenha(r *Registry) {
 			parts := ctx.GroupInfo.Participants
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("🏆 *TOP %s DO GRUPO*\n\n", strings.ToUpper(ctx.CmdName)))
-			var cardLines []string
+			var entries []rankEntry
 			var mentions []string
 			limit := 5
 			if len(parts) < limit {
@@ -419,9 +419,14 @@ func registerResenha(r *Registry) {
 				pct := randInt(50, 100)
 				mentions = append(mentions, p.JID.String())
 				sb.WriteString(fmt.Sprintf("%d. %s — *%d%%*\n", i+1, mentionTag(p.JID), pct))
-				cardLines = append(cardLines, fmt.Sprintf("%d. @%s — %d%%", i+1, p.JID.User, pct))
+				entries = append(entries, rankEntry{
+					Pos:    i + 1,
+					Name:   "@" + p.JID.User,
+					Stat:   fmt.Sprintf("%d%%", pct),
+					Avatar: fetchAvatar(ctx, p.JID),
+				})
 			}
-			img, err := renderGameCard("RANKING DO GRUPO", "TOP "+strings.ToUpper(ctx.CmdName), cardLines, colAmber)
+			img, err := renderRankCard("TOP "+strings.ToUpper(ctx.CmdName), entries, colAmber)
 			return sendCard(ctx, img, err, sb.String(), mentions...)
 		},
 	})

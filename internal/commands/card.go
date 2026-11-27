@@ -2,15 +2,20 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/jpeg"
 	"image/png"
 	"math"
 	"strings"
+	"time"
 	"unicode"
 
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
@@ -393,6 +398,135 @@ func renderMeterCard(title, target string, pct int, subline string, accent color
 		drawText(img, fSub, 56, 265, colText, stripEmojiForFont(subline))
 	}
 	return encodePNG(img)
+}
+
+type rankEntry struct {
+	Pos    int
+	Name   string
+	Stat   string
+	Avatar []byte
+}
+
+func drawCircularAvatar(dst *image.RGBA, raw []byte, cx, cy, r int, fallbackText string, fallbackCol color.RGBA) {
+	if len(raw) > 0 {
+		if src, _, err := image.Decode(bytes.NewReader(raw)); err == nil {
+			b := src.Bounds()
+			sw, sh := b.Dx(), b.Dy()
+			side := sw
+			if sh < side {
+				side = sh
+			}
+			ox := b.Min.X + (sw-side)/2
+			oy := b.Min.Y + (sh-side)/2
+			for py := -r; py <= r; py++ {
+				for px := -r; px <= r; px++ {
+					if px*px+py*py <= r*r {
+						sx := ox + ((px + r) * side / (2 * r))
+						sy := oy + ((py + r) * side / (2 * r))
+						dst.Set(cx+px, cy+py, src.At(sx, sy))
+					}
+				}
+			}
+			return
+		}
+	}
+	for py := -r; py <= r; py++ {
+		for px := -r; px <= r; px++ {
+			if px*px+py*py <= r*r {
+				dst.SetRGBA(cx+px, cy+py, fallbackCol)
+			}
+		}
+	}
+	if f := makeFace(true, float64(r)); f != nil {
+		defer f.Close()
+		drawCenteredText(dst, f, cx, cy+r/3, colBG, fallbackText)
+	}
+}
+
+func renderRankCard(title string, entries []rankEntry, accent color.RGBA) ([]byte, error) {
+	fTag := makeFace(true, 18)
+	fTitle := makeFace(true, 32)
+	fPos := makeFace(true, 24)
+	fName := makeFace(true, 23)
+	fStat := makeFace(false, 21)
+	fFoot := makeFace(false, 16)
+	defer func() {
+		for _, f := range []font.Face{fTag, fTitle, fPos, fName, fStat, fFoot} {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
+
+	if len(entries) > 10 {
+		entries = entries[:10]
+	}
+	w := 880
+	rowH := 76
+	h := 210 + len(entries)*(rowH+10)
+	if h < 320 {
+		h = 320
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	fillRect(img, 0, 0, w, h, colBG)
+	fillRoundedRect(img, 24, 24, w-48, h-48, 22, accent)
+	fillRoundedRect(img, 27, 27, w-54, h-54, 20, colCard)
+
+	fillRoundedRect(img, 54, 50, 210, 34, 10, accent)
+	drawCenteredText(img, fTag, 159, 73, colBG, "RANKING LUNAR")
+	drawText(img, fTitle, 54, 128, colText, stripEmojiForFont(title))
+
+	y := 156
+	for _, e := range entries {
+		fillRoundedRect(img, 52, y, w-104, rowH, 14, colCardDark)
+		posCol := colMuted
+		switch e.Pos {
+		case 1:
+			posCol = colAmber
+		case 2:
+			posCol = color.RGBA{203, 213, 225, 255}
+		case 3:
+			posCol = color.RGBA{217, 119, 6, 255}
+		}
+		drawCenteredText(img, fPos, 88, y+46, posCol, fmt.Sprintf("#%d", e.Pos))
+
+		drawCircularAvatar(img, e.Avatar, 152, y+rowH/2, 26, fmt.Sprintf("%d", e.Pos), posCol)
+
+		name := stripEmojiForFont(e.Name)
+		if len(name) > 24 {
+			name = name[:24] + "..."
+		}
+		drawText(img, fName, 198, y+45, colText, name)
+
+		stat := stripEmojiForFont(e.Stat)
+		sw := 0
+		if fStat != nil {
+			sw = font.MeasureString(fStat, stat).Ceil()
+		}
+		drawText(img, fStat, w-76-sw, y+45, accent, stat)
+		y += rowH + 10
+	}
+
+	drawText(img, fFoot, 54, h-44, colGrid, "LUNAR BOT  •  TOP RANKING")
+	return encodePNG(img)
+}
+
+func fetchAvatar(ctx *Context, j types.JID) []byte {
+	if ctx == nil || ctx.Bot == nil || ctx.Bot.Raw() == nil || j.IsEmpty() {
+		return nil
+	}
+	pctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	info, err := ctx.Bot.Raw().GetProfilePictureInfo(pctx, j, &whatsmeow.GetProfilePictureParams{Preview: true})
+	if err != nil || info == nil || info.URL == "" {
+		return nil
+	}
+	pic, err := httpGetBytes(info.URL)
+	if err != nil {
+		return nil
+	}
+	return pic
 }
 
 func sendCard(ctx *Context, img []byte, err error, caption string, mentions ...string) error {

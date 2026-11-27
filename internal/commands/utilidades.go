@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	qrcode "github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -312,24 +313,73 @@ func registerUtilidades(r *Registry) {
 		},
 	})
 
+	runRank := func(ctx *Context, by string) error {
+		users := ctx.DB.TopUsers(by, 10)
+		if len(users) == 0 {
+			return ctx.Reply("📭 Ranking vazio.")
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("🏆 *RANKING (%s)*\n\n", strings.ToUpper(by)))
+		entries := make([]rankEntry, len(users))
+		var mentions []string
+		for i, u := range users {
+			tag := strings.Split(u.JID, "@")[0]
+			display := tag
+			if u.Nome != "" {
+				display = u.Nome
+			}
+			mentions = append(mentions, u.JID)
+			sb.WriteString(fmt.Sprintf("%d. @%s — Nv.*%d* | %d %s\n", i+1, tag, u.Level, u.Coins, ctx.Config.Moeda.Simbolo))
+
+			var stat string
+			switch by {
+			case "coins":
+				stat = fmt.Sprintf("%d %s  |  Nv.%d", u.Coins, ctx.Config.Moeda.Simbolo, u.Level)
+			case "wins":
+				stat = fmt.Sprintf("%d Vitorias  |  Nv.%d", u.Wins, u.Level)
+			default:
+				stat = fmt.Sprintf("Nv.%d  |  %d %s", u.Level, u.Coins, ctx.Config.Moeda.Simbolo)
+			}
+
+			var avatar []byte
+			if j, err := types.ParseJID(u.JID); err == nil {
+				avatar = fetchAvatar(ctx, j)
+			}
+			entries[i] = rankEntry{
+				Pos:    i + 1,
+				Name:   display,
+				Stat:   stat,
+				Avatar: avatar,
+			}
+		}
+		img, err := renderRankCard("RANKING ("+strings.ToUpper(by)+")", entries, colAmber)
+		return sendCard(ctx, img, err, sb.String(), mentions...)
+	}
+
 	r.Register(&Command{
-		Name: "rank", Aliases: []string{"top", "leaderboard"}, Category: "utilidades", Description: "Ranking de níveis e moedas",
+		Name: "rank", Aliases: []string{"top", "leaderboard"}, Category: "utilidades", Description: "Ranking de níveis, moedas ou vitórias",
 		Execute: func(ctx *Context) error {
 			by := "level"
-			if strings.EqualFold(ctx.Q, "coins") || strings.EqualFold(ctx.Q, "saldo") {
+			if strings.EqualFold(ctx.Q, "coins") || strings.EqualFold(ctx.Q, "saldo") || strings.EqualFold(ctx.Q, "moedas") {
 				by = "coins"
+			} else if strings.EqualFold(ctx.Q, "wins") || strings.EqualFold(ctx.Q, "vitorias") {
+				by = "wins"
 			}
-			users := ctx.DB.TopUsers(by, 10)
-			if len(users) == 0 {
-				return ctx.Reply("📭 Ranking vazio.")
-			}
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("🏆 *RANKING (%s)*\n\n", strings.ToUpper(by)))
-			for i, u := range users {
-				tag := strings.Split(u.JID, "@")[0]
-				sb.WriteString(fmt.Sprintf("%d. @%s — Nv.*%d* | %d %s\n", i+1, tag, u.Level, u.Coins, ctx.Config.Moeda.Simbolo))
-			}
-			return ctx.Reply(sb.String())
+			return runRank(ctx, by)
+		},
+	})
+
+	r.Register(&Command{
+		Name: "rankcoins", Aliases: []string{"topcoins", "rankmoedas"}, Category: "utilidades", Description: "Ranking de moedas",
+		Execute: func(ctx *Context) error {
+			return runRank(ctx, "coins")
+		},
+	})
+
+	r.Register(&Command{
+		Name: "rankwins", Aliases: []string{"topwins", "rankvitorias"}, Category: "utilidades", Description: "Ranking de vitórias",
+		Execute: func(ctx *Context) error {
+			return runRank(ctx, "wins")
 		},
 	})
 
