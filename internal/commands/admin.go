@@ -370,7 +370,7 @@ func registerAdmin(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "hidetag", Aliases: []string{"totag", "aviso"}, Category: "admin", Admin: true, OnlyGroup: true,
+		Name: "hidetag", Aliases: []string{"totag", "aviso", "todos", "all"}, Category: "admin", Admin: true, OnlyGroup: true,
 		Description: "Marca todos do grupo silenciosamente com uma mensagem",
 		Execute: func(ctx *Context) error {
 			if ctx.GroupInfo == nil {

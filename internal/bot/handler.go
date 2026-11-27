@@ -17,7 +17,10 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
-var linkRE = regexp.MustCompile(`(?i)(https?://[^\s]+)|(www\.[^\s]+)|(wa\.me/[^\s]+)|(chat\.whatsapp\.com/[^\s]+)`)
+var (
+	linkRE  = regexp.MustCompile(`(?i)(https?://[^\s]+)|(www\.[^\s]+)|(wa\.me/[^\s]+)|(chat\.whatsapp\.com/[^\s]+)`)
+	atAllRE = regexp.MustCompile(`(?i)(?:^|\s)@(?:todos|all)\b`)
+)
 
 func (c *Client) seenMessage(id string) bool {
 	if id == "" {
@@ -309,6 +312,16 @@ func (c *Client) handleMessage(evt *events.Message) {
 				}
 			}
 		}
+	}
+
+	// @todos / @all trigger in groups (admins & owner)
+	if isGroup && (isAdmin || isDono) && groupInfo != nil && atAllRE.MatchString(body) && !strings.HasPrefix(body, prefix) {
+		mentions := make([]string, 0, len(groupInfo.Participants))
+		for _, p := range groupInfo.Participants {
+			mentions = append(mentions, p.JID.String())
+		}
+		_ = c.SendText(chat, body, mentions...)
+		return
 	}
 
 	// Non-command XP & Lunar natural-language commands / human-like persona reply
