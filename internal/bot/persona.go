@@ -308,6 +308,12 @@ func (c *Client) replyAsLunar(evt *events.Message, senderName, body string, isDo
 			return "", nil, ""
 		}
 	}
+	if quoted := extractQuotedBody(evt); quoted != "" {
+		if len(quoted) > 250 {
+			quoted = quoted[:250] + "..."
+		}
+		body = fmt.Sprintf("(respondendo à mensagem: %q) %s", quoted, body)
+	}
 
 	wantsAudio := audioRequestRE.MatchString(body)
 	if wantsAudio {
@@ -408,7 +414,33 @@ func pcmToOggOpus(rootDir string, pcm []byte) ([]byte, error) {
 	return os.ReadFile(oggPath)
 }
 
-func buildLunarSystemPrompt(ownerName string, isDono bool, userFacts, chatFacts []string) string {
+func extractQuotedBody(evt *events.Message) string {
+	if evt == nil || evt.Message == nil {
+		return ""
+	}
+	ci := getMsgContextInfo(evt.Message)
+	if ci == nil || ci.QuotedMessage == nil {
+		return ""
+	}
+	return strings.TrimSpace(extractBody(ci.QuotedMessage))
+}
+
+func (c *Client) commandCatalog() string {
+	if c.registry == nil {
+		return ""
+	}
+	var items []string
+	for _, cmd := range c.registry.AllUnique() {
+		if cmd.Description != "" {
+			items = append(items, fmt.Sprintf(".%s (%s)", cmd.Name, cmd.Description))
+		} else {
+			items = append(items, "."+cmd.Name)
+		}
+	}
+	return strings.Join(items, ", ")
+}
+
+func buildLunarSystemPrompt(ownerName string, isDono bool, userFacts, chatFacts []string, cmdCatalog string) string {
 	if ownerName == "" {
 		ownerName = "meu dono"
 	}
@@ -432,6 +464,9 @@ func buildLunarSystemPrompt(ownerName string, isDono bool, userFacts, chatFacts 
 	}
 	if len(chatFacts) > 0 {
 		memCtx += " MEMÓRIA DESTE CHAT/GRUPO: " + strings.Join(chatFacts, " | ") + "."
+	}
+	if cmdCatalog != "" {
+		memCtx += " CATÁLOGO REAL DE COMANDOS DO BOT (use para explicar comandos com precisão, sem inventar): " + cmdCatalog + "."
 	}
 	return "Você é a Lunar, uma garota brasileira real conversando no WhatsApp. " +
 		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
@@ -477,7 +512,7 @@ func (c *Client) askLunarGeminiLive(chatID, senderJID, senderName, body string, 
 		"setup": map[string]any{
 			"model": "models/gemini-3.8-live",
 			"systemInstruction": map[string]any{
-				"parts": []map[string]string{{"text": buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts)}},
+				"parts": []map[string]string{{"text": buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts, c.commandCatalog())}},
 			},
 			"generationConfig": map[string]any{
 				"responseModalities": []string{"AUDIO"},
@@ -586,7 +621,7 @@ func (c *Client) askLunarGeminiLive(chatID, senderJID, senderName, body string, 
 
 func (c *Client) askLunarGemini(chatID, senderJID, senderName, body string, isDono bool, imgData []byte, imgMime string) (string, error) {
 	hist, userFacts, chatFacts := c.loadLunarContext(chatID, senderJID)
-	systemPrompt := buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts)
+	systemPrompt := buildLunarSystemPrompt(c.cfg.NomeDoDono, isDono, userFacts, chatFacts, c.commandCatalog())
 
 	contents := make([]map[string]any, 0, len(hist)+1)
 	for _, h := range hist {
