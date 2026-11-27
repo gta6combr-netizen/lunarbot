@@ -122,6 +122,7 @@ var (
 	atMentionRE    = regexp.MustCompile(`@\d+`)
 	aiCmdTagRE     = regexp.MustCompile(`\[CMD:([a-zA-Z0-9_.-]+)(?:\s+([^\]]+))?\]`)
 	aiMemTagRE     = regexp.MustCompile(`\[MEM:([^\]]+)\]`)
+	socialURLRE    = regexp.MustCompile(`https?://[^\s]+`)
 )
 
 // parseNaturalCommand extracts a bot command from natural language when Lunar is addressed without a prefix.
@@ -135,6 +136,28 @@ func (c *Client) parseNaturalCommand(body string) (cmdName string, args []string
 	}
 
 	// Preserve @mentions in args for commands that target users
+	// Direct social media link download in natural language (e.g. "baixa https://vm.tiktok.com/...")
+	if urls := socialURLRE.FindAllString(body, -1); len(urls) > 0 {
+		for _, u := range urls {
+			ul := strings.ToLower(u)
+			if strings.Contains(ul, "/tiktoklite") {
+				continue
+			}
+			switch {
+			case strings.Contains(ul, "tiktok.com"):
+				return "tiktok", []string{u}, u, true
+			case strings.Contains(ul, "instagram.com"):
+				return "instagram", []string{u}, u, true
+			case strings.Contains(ul, "facebook.com") || strings.Contains(ul, "fb.watch") || strings.Contains(ul, "fb.com"):
+				return "facebook", []string{u}, u, true
+			case strings.Contains(ul, "x.com") || strings.Contains(ul, "twitter.com"):
+				return "x", []string{u}, u, true
+			case strings.Contains(ul, "pinterest.") || strings.Contains(ul, "pin.it"):
+				return "pinterest", []string{u}, u, true
+			}
+		}
+	}
+
 	rawAfterLunar := strings.TrimSpace(lunarMentionRE.ReplaceAllString(body, " "))
 	rawAfterLunar = strings.TrimLeft(rawAfterLunar, ",:;-!? ")
 	rawFields := strings.Fields(rawAfterLunar)
@@ -407,7 +430,7 @@ func buildLunarSystemPrompt(ownerName string, isDono bool, userFacts, chatFacts 
 		"Escreva exatamente como uma pessoa real no zap: frases curtas e completas (1 a 2 frases, NUNCA deixe uma frase pela metade), sem listas ou formatação de robô, usando risadas naturais (kkk, kkkk, mds) e gírias leves quando combinar. " +
 		"Se mandarem imagem ou figurinha, comente diretamente sobre o que você vê nela (meme, texto, expressão, zoeira) como uma pessoa reagindo no zap. " +
 		"Nunca finja que está gravando ou que vai mandar depois (não diga 'tô gravando', 'calma aí que já mando') — responda direto o que você quer dizer ou o que pediram pra você falar. " +
-		"VOCÊ TEM PODERES REAIS NO WHATSAPP: quando alguém pedir para você EXECUTAR uma ação (marcar todo mundo, abrir/fechar grupo, fazer figurinha, baixar música, revelar foto, banir, mutar, etc.), inclua EXATAMENTE a tag `[CMD:comando argumentos]` no final da resposta (ex: `[CMD:marcar]`, `[CMD:hidetag aviso]`, `[CMD:abrir]`, `[CMD:fechar]`, `[CMD:sticker]`, `[CMD:figaudio]`, `[CMD:revela]`, `[CMD:menu]`, `[CMD:play nome da musica]`, `[CMD:ban]`, `[CMD:mute]`, `[CMD:unmute]`, `[CMD:abraco]`, `[CMD:beijo]`, `[CMD:tapa]`, `[CMD:fofoca]`, `[CMD:verdade]`, `[CMD:desafio]`). Só use `[CMD:...]` quando realmente pedirem uma ação. " +
+		"VOCÊ TEM PODERES REAIS NO WHATSAPP: quando alguém pedir para você EXECUTAR uma ação (marcar todo mundo, abrir/fechar grupo, fazer figurinha, baixar música ou vídeo de redes sociais, revelar foto, banir, mutar, etc.), inclua EXATAMENTE a tag `[CMD:comando argumentos]` no final da resposta (ex: `[CMD:marcar]`, `[CMD:hidetag aviso]`, `[CMD:abrir]`, `[CMD:fechar]`, `[CMD:sticker]`, `[CMD:figaudio]`, `[CMD:revela]`, `[CMD:menu]`, `[CMD:play nome da musica]`, `[CMD:tiktok url]`, `[CMD:instagram url]`, `[CMD:facebook url]`, `[CMD:x url]`, `[CMD:pinterest url]`, `[CMD:ban]`, `[CMD:mute]`, `[CMD:unmute]`, `[CMD:abraco]`, `[CMD:beijo]`, `[CMD:tapa]`, `[CMD:fofoca]`, `[CMD:verdade]`, `[CMD:desafio]`). NUNCA use `[CMD:play]` para links do TikTok, Instagram, Facebook, X ou Pinterest (use o comando da rede social com a URL do vídeo, ignorando links `/tiktoklite`). Só use `[CMD:...]` quando realmente pedirem uma ação. " +
 		"MEMÓRIA PERMANENTE: quando alguém contar um fato importante sobre si (nome, apelido, gosto, trabalho, aniversário, piada interna) ou pedir explicitamente pra você lembrar de algo, adicione `[MEM:fato curto e objetivo]` no final da resposta (ex: `[MEM:se chama Lucas]`, `[MEM:gosta de funk]`). Só salve fatos novos/relevantes. " +
 		"Se puxarem brincadeira ou resenha, entre na zoeira. Nunca diga que é uma IA, bot ou modelo de linguagem. " + ownerCtx + memCtx
 }
