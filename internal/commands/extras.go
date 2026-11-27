@@ -148,6 +148,34 @@ func registerExtras(r *Registry) {
 			if u1.Spouse != "" {
 				return ctx.Reply("💍 Você já está casado(a)!")
 			}
+			// If asking the bot itself in marriage:
+			if ctx.Bot != nil && ctx.Bot.Raw() != nil && ctx.Bot.Raw().Store.ID != nil {
+				botID := ctx.Bot.Raw().Store.ID.ToNonAD()
+				botLID := ctx.Bot.Raw().Store.LID.ToNonAD()
+				if targetPN.User == botID.User || target.User == botID.User || (!botLID.IsEmpty() && (targetPN.User == botLID.User || target.User == botLID.User)) {
+					if !ctx.IsDono {
+						return ctx.Reply("💅 Nem pensar, já tenho dono!")
+					}
+					now := time.Now().UnixMilli()
+					botJIDStr := botID.String()
+					uBot := ctx.DB.GetUser(botJIDStr)
+					u1.Spouse = botJIDStr
+					u1.MarriedAt = now
+					uBot.Spouse = senderPN.String()
+					uBot.MarriedAt = now
+					_ = ctx.DB.SaveUser(u1)
+					_ = ctx.DB.SaveUser(uBot)
+					img, err := renderCasamentoCard(ctx.Config.RootDir, "@"+senderPN.User, "@"+botID.User, 100, fetchAvatar(ctx, senderPN), fetchAvatar(ctx, botID))
+					cap := fmt.Sprintf("💖 *ACEITO SIM, MEU DONO!*\n%s & %s oficializaram o casamento! 💍", mentionTag(senderPN), mentionTag(botID))
+					if err := sendCard(ctx, img, err, cap, senderPN.String(), botJIDStr); err != nil {
+						return err
+					}
+					if mp3, err := os.ReadFile(filepath.Join(ctx.Config.RootDir, "assets", "casamento.mp3")); err == nil && len(mp3) > 0 {
+						_ = ctx.SendAudio(mp3, false)
+					}
+					return nil
+				}
+			}
 			_ = ctx.DB.SetProposal(senderPN.String(), targetPN.String())
 			if targetPN.User != target.User {
 				_ = ctx.DB.SetProposal(senderPN.String(), target.ToNonAD().String())
