@@ -286,21 +286,40 @@ func registerDownloads(r *Registry) {
 		r.Register(&Command{
 			Name: name, Aliases: aliases, Category: "downloads", Description: desc,
 			Execute: func(ctx *Context) error {
-				if ctx.Q == "" || !strings.HasPrefix(ctx.Q, "http") {
+				targetURL := httpURLRE.FindString(ctx.Q)
+				if targetURL == "" {
 					return ctx.Reply("❗ Informe uma URL válida.")
 				}
-				ctx.React("📥")
-				if ctx.Config.RapidAPIKey != "" {
-					if data, isImg, err := downloadRapidSocialMedia(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
-						if isImg {
-							return ctx.SendImage(data, "✅ Download concluído!")
-						}
-						return ctx.SendVideo(data, "✅ Download concluído!", false)
-					}
+				lowerAll := strings.ToLower(ctx.Body + " " + ctx.Q)
+				wantsMP3 := strings.Contains(lowerAll, "mp3") || strings.Contains(lowerAll, "áudio") || strings.Contains(lowerAll, "audio") || strings.Contains(lowerAll, "música") || strings.Contains(lowerAll, "musica")
+				if wantsMP3 {
+					ctx.React("🎵")
+				} else {
+					ctx.React("📥")
 				}
-				data, err := downloadVideoFromURL(ctx, ctx.Q)
-				if err != nil {
-					return ctx.Reply("❌ Erro ao baixar: " + err.Error())
+
+				var data []byte
+				var isImg bool
+				var err error
+				if ctx.Config.RapidAPIKey != "" {
+					data, isImg, err = downloadRapidSocialMedia(ctx.Config.RapidAPIKey, targetURL)
+				}
+				if err != nil || len(data) <= 512 {
+					isImg = false
+					data, err = downloadVideoFromURL(ctx, targetURL)
+				}
+				if err != nil || len(data) == 0 {
+					return ctx.Reply("❌ Erro ao baixar: " + fmt.Sprint(err))
+				}
+				if wantsMP3 && !isImg {
+					mp3, err := runFFmpeg(ctx, data, "mp4", "mp3", []string{"-vn", "-ab", "192k"})
+					if err != nil {
+						return ctx.Reply("❌ Erro ao converter para MP3: " + err.Error())
+					}
+					return ctx.SendAudio(mp3, false)
+				}
+				if isImg {
+					return ctx.SendImage(data, "✅ Download concluído!")
 				}
 				return ctx.SendVideo(data, "✅ Download concluído!", false)
 			},
