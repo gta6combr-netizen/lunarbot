@@ -53,6 +53,8 @@ type Client struct {
 	floodMu sync.Mutex
 	flood   map[string][]time.Time
 
+	msgQueue chan *events.Message
+
 	restartFn func()
 }
 
@@ -81,6 +83,7 @@ func NewClient(cfg *config.Config, database *db.DB, reg *commands.Registry, useC
 		flood:      make(map[string][]time.Time),
 		restartFn:  restartFn,
 	}
+	c.initQueue()
 
 	waClient.AddEventHandler(c.handleEvent)
 
@@ -176,7 +179,7 @@ func (c *Client) handleEvent(rawEvt any) {
 		c.qrMu.Unlock()
 		logger.Red("❌ Sessão desconectada (LoggedOut).")
 	case *events.Message:
-		go c.handleMessage(evt)
+		c.enqueueMessage(evt)
 	case *events.GroupInfo:
 		go c.handleGroupInfo(evt)
 	}
