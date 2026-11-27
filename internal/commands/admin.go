@@ -395,9 +395,13 @@ func registerAdmin(r *Registry) {
 			if ctx.GroupInfo == nil {
 				return ctx.Reply("❌ Sem metadados do grupo.")
 			}
+			q := strings.TrimSpace(ctx.Q)
+			if strings.EqualFold(q, "todos") || strings.EqualFold(q, "all") {
+				q = ""
+			}
 			msg := "📢 @todos"
-			if ctx.Q != "" {
-				msg = "📢 @todos " + ctx.Q
+			if q != "" {
+				msg = "📢 @todos " + q
 			}
 			mentions := make([]string, 0, len(ctx.GroupInfo.Participants))
 			for _, p := range ctx.GroupInfo.Participants {
