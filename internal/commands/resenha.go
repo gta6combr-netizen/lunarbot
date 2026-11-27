@@ -90,6 +90,18 @@ func registerResenha(r *Registry) {
 		{Name: "piscar", Aliases: []string{"wink"}, Emoji: "😉", Verb: "piscou para", WaifuEP: "wink"},
 		{Name: "corar", Aliases: []string{"blush"}, Emoji: "😳", Verb: "corou por causa de", WaifuEP: "blush"},
 		{Name: "assustar", Aliases: []string{"bully"}, Emoji: "👻", Verb: "assustou", WaifuEP: "bully"},
+		{Name: "dancar", Aliases: []string{"dançar", "dance", "danca"}, Emoji: "💃", Verb: "dançou com", WaifuEP: "dance"},
+		{Name: "rir", Aliases: []string{"risada", "laugh"}, Emoji: "😂", Verb: "deu risada com", WaifuEP: "laugh"},
+		{Name: "chorar", Aliases: []string{"choro", "cry"}, Emoji: "😭", Verb: "chorou no ombro de", WaifuEP: "cry"},
+		{Name: "sorrir", Aliases: []string{"sorriso", "smile"}, Emoji: "😊", Verb: "sorriu para", WaifuEP: "smile"},
+		{Name: "acenar", Aliases: []string{"wave"}, Emoji: "👋", Verb: "acenou para", WaifuEP: "wave"},
+		{Name: "aplaudir", Aliases: []string{"palmas", "clap"}, Emoji: "👏", Verb: "aplaudiu", WaifuEP: "clap"},
+		{Name: "tocaai", Aliases: []string{"highfive", "hi5"}, Emoji: "🙌", Verb: "deu um toca aqui em", WaifuEP: "highfive"},
+		{Name: "segurar", Aliases: []string{"handhold", "maosdadas"}, Emoji: "🤝", Verb: "segurou a mão de", WaifuEP: "handhold"},
+		{Name: "bonk", Aliases: []string{"martelo"}, Emoji: "🔨", Verb: "deu um bonk em", WaifuEP: "bonk"},
+		{Name: "yeet", Aliases: []string{"arremessar"}, Emoji: "🚀", Verb: "arremessou", WaifuEP: "yeet"},
+		{Name: "feliz", Aliases: []string{"happy", "alegre"}, Emoji: "✨", Verb: "ficou feliz por causa de", WaifuEP: "happy"},
+		{Name: "encarar", Aliases: []string{"glare", "stare"}, Emoji: "👀", Verb: "encarou", WaifuEP: "glare"},
 	}
 
 	for _, rx := range reactions {
@@ -206,17 +218,28 @@ func registerResenha(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "cantada", Category: "resenha", Description: "Manda uma cantada",
+		Name: "cantada", Category: "resenha", Description: "Manda uma cantada (.cantada [@pessoa])",
 		Execute: func(ctx *Context) error {
 			c := []string{
-				"Você não é Wi-Fi, mas senti uma conexão imediata aqui hein 👀",
+				"Você não é Wi-Fi, mas senti uma conexão imediata aqui hein",
 				"Se beleza fosse bug, você travava minha produção inteira.",
-				"Não sou astrônoma, mas você é a coisa mais linda que já vi no céu hoje 🌙",
+				"Não sou astrônoma, mas você é a coisa mais linda que já vi no céu hoje.",
 				"Me chama de boleto e me paga atenção, vai.",
 				"Você tem mapa? Me perdi feio no seu sorriso.",
+				"Meu coração não tem banco de dados, mas já salvou você como favorito.",
+				"Se amar você fosse crime, eu já tava cumprindo perpétua sem recorrer.",
+				"Você não é eclipse lunar, mas para tudo só pra olhar pra você.",
 			}
 			chosen := c[randInt(0, len(c)-1)]
-			img, err := renderGameCard("CANTADA", "Modo Xaveco", []string{chosen}, colRose)
+			target := resolveTarget(ctx)
+			fromAv := fetchAvatar(ctx, ctx.Sender)
+			if !target.IsEmpty() {
+				toAv := fetchAvatar(ctx, target)
+				img, err := renderCantadaCard(chosen, ctx.Sender.User, target.User, fromAv, toAv)
+				cap := fmt.Sprintf("💘 %s para %s: *%s*", mentionTag(ctx.Sender), mentionTag(target), chosen)
+				return sendCard(ctx, img, err, cap, ctx.Sender.String(), target.String())
+			}
+			img, err := renderCantadaCard(chosen, ctx.Sender.User, "", fromAv, nil)
 			return sendCard(ctx, img, err, "💘 "+chosen)
 		},
 	})

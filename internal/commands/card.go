@@ -512,6 +512,93 @@ func renderRankCard(title string, entries []rankEntry, accent color.RGBA) ([]byt
 	return encodePNG(img)
 }
 
+func drawHeart(img *image.RGBA, cx, cy, size int, c color.RGBA) {
+	s := float64(size)
+	for py := -size * 2; py <= size*2; py++ {
+		for px := -size * 2; px <= size*2; px++ {
+			x := float64(px) / s
+			y := -float64(py) / s
+			v := math.Pow(x*x+y*y-1, 3) - x*x*y*y*y
+			if v <= 0 {
+				img.SetRGBA(cx+px, cy+py, c)
+			}
+		}
+	}
+}
+
+func renderCantadaCard(quote, fromName, toName string, fromAvatar, toAvatar []byte) ([]byte, error) {
+	w, h := 900, 480
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+
+	// Deep romantic gradient + soft pink glow
+	for py := 0; py < h; py++ {
+		t := float64(py) / float64(h)
+		r := uint8(24 + 22*math.Sin(t*math.Pi))
+		g := uint8(10 + 6*math.Sin(t*math.Pi))
+		b := uint8(34 + 24*math.Sin(t*math.Pi))
+		for px := 0; px < w; px++ {
+			dGlow := math.Hypot(float64(px-w/2), float64(py-h/2))
+			glow := math.Max(0, 1.0-dGlow/420.0)
+			rr := uint8(math.Min(255, float64(r)+glow*46))
+			gg := uint8(math.Min(255, float64(g)+glow*10))
+			bb := uint8(math.Min(255, float64(b)+glow*34))
+			img.SetRGBA(px, py, color.RGBA{rr, gg, bb, 255})
+		}
+	}
+
+	colPink := color.RGBA{244, 114, 182, 255}
+	colHotPink := color.RGBA{236, 72, 153, 255}
+	colWarmWhite := color.RGBA{255, 241, 242, 255}
+	colSoftPink := color.RGBA{251, 207, 232, 255}
+
+	fillRoundedRect(img, 28, 28, w-56, h-56, 26, colPink)
+	fillRoundedRect(img, 31, 31, w-62, h-62, 24, color.RGBA{22, 11, 30, 255})
+	fillRoundedRect(img, 44, 44, w-88, h-88, 18, color.RGBA{34, 16, 44, 255})
+
+	fTag := makeFace(true, 18)
+	fQuote := makeFace(true, 28)
+	fSub := makeFace(false, 20)
+	fFoot := makeFace(false, 16)
+	defer func() {
+		for _, f := range []font.Face{fTag, fQuote, fSub, fFoot} {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
+
+	// Header pill + vector heart
+	fillRoundedRect(img, 68, 66, 220, 34, 12, colHotPink)
+	drawCenteredText(img, fTag, 178, 89, colBG, "MODO ROMANCE")
+	drawHeart(img, 315, 84, 12, colRose)
+
+	// Avatars on top-right
+	if toName != "" {
+		drawCircularAvatar(img, fromAvatar, w-196, 86, 24, "EU", colPink)
+		drawHeart(img, w-146, 86, 9, colRose)
+		drawCircularAvatar(img, toAvatar, w-96, 86, 24, "VC", colHotPink)
+	} else if len(fromAvatar) > 0 {
+		drawCircularAvatar(img, fromAvatar, w-96, 86, 24, "L", colPink)
+	}
+
+	// Centered wrapped quote
+	lines := wrapText(fQuote, `"`+quote+`"`, 720)
+	if len(lines) > 5 {
+		lines = lines[:5]
+	}
+	startY := 220 - (len(lines)-1)*22
+	for _, line := range lines {
+		drawCenteredText(img, fQuote, w/2, startY, colWarmWhite, line)
+		startY += 44
+	}
+
+	if toName != "" {
+		drawCenteredText(img, fSub, w/2, h-102, colSoftPink, fmt.Sprintf("De @%s  para  @%s", stripEmojiForFont(fromName), stripEmojiForFont(toName)))
+	}
+	drawCenteredText(img, fFoot, w/2, h-62, colPink, "LUNAR BOT  •  CANTADA")
+	return encodePNG(img)
+}
+
 func fetchAvatar(ctx *Context, j types.JID) []byte {
 	if ctx == nil || ctx.Bot == nil || ctx.Bot.Raw() == nil || j.IsEmpty() {
 		return nil
