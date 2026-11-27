@@ -361,7 +361,7 @@ func registerUtilidades(r *Registry) {
 				Avatar: avatar,
 			}
 		}
-		img, err := renderRankCard("RANKING ("+strings.ToUpper(by)+")", entries, colAmber)
+		img, err := renderRankCard(ctx.Config.RootDir, "RANKING ("+strings.ToUpper(by)+")", entries, colAmber)
 		return sendCard(ctx, img, err, sb.String(), mentions...)
 	}
 

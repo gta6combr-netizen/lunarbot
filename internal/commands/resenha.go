@@ -564,7 +564,7 @@ func registerResenha(r *Registry) {
 					Avatar: fetchAvatar(ctx, p.JID),
 				})
 			}
-			img, err := renderRankCard("TOP "+strings.ToUpper(ctx.CmdName), entries, colAmber)
+			img, err := renderRankCard(ctx.Config.RootDir, "TOP "+strings.ToUpper(ctx.CmdName), entries, colAmber)
 			return sendCard(ctx, img, err, sb.String(), mentions...)
 		},
 	})

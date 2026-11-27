@@ -445,13 +445,13 @@ func drawCircularAvatar(dst *image.RGBA, raw []byte, cx, cy, r int, fallbackText
 	}
 }
 
-func renderRankCard(title string, entries []rankEntry, accent color.RGBA) ([]byte, error) {
-	fTag := makeFace(true, 18)
-	fTitle := makeFace(true, 32)
-	fPos := makeFace(true, 24)
-	fName := makeFace(true, 23)
-	fStat := makeFace(false, 21)
-	fFoot := makeFace(false, 16)
+func renderRankCard(rootDir, title string, entries []rankEntry, accent color.RGBA) ([]byte, error) {
+	fTag := makeFace(true, 16)
+	fTitle := makeFace(true, 30)
+	fPos := makeFace(true, 22)
+	fName := makeFace(true, 21)
+	fStat := makeFace(true, 20)
+	fFoot := makeFace(false, 15)
 	defer func() {
 		for _, f := range []font.Face{fTag, fTitle, fPos, fName, fStat, fFoot} {
 			if f != nil {
@@ -460,57 +460,76 @@ func renderRankCard(title string, entries []rankEntry, accent color.RGBA) ([]byt
 		}
 	}()
 
-	if len(entries) > 10 {
-		entries = entries[:10]
-	}
-	w := 880
-	rowH := 76
-	h := 210 + len(entries)*(rowH+10)
-	if h < 320 {
-		h = 320
+	if len(entries) > 8 {
+		entries = entries[:8]
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	fillRect(img, 0, 0, w, h, colBG)
-	fillRoundedRect(img, 24, 24, w-48, h-48, 22, accent)
-	fillRoundedRect(img, 27, 27, w-54, h-54, 20, colCard)
+	var img *image.RGBA
+	w, h := 1024, 640
+	bgPath := filepath.Join(rootDir, "assets", "rank-bg.png")
+	if rawBG, err := os.ReadFile(bgPath); err == nil {
+		if srcBG, _, err := image.Decode(bytes.NewReader(rawBG)); err == nil {
+			b := srcBG.Bounds()
+			w, h = b.Dx(), b.Dy()
+			img = image.NewRGBA(image.Rect(0, 0, w, h))
+			draw.Draw(img, img.Bounds(), srcBG, b.Min, draw.Src)
+		}
+	}
+	if img == nil {
+		img = image.NewRGBA(image.Rect(0, 0, w, h))
+		fillRect(img, 0, 0, w, h, colBG)
+		fillRoundedRect(img, 72, 48, w-144, h-96, 24, colAmber)
+		fillRoundedRect(img, 76, 52, w-152, h-104, 22, colCard)
+	}
 
-	fillRoundedRect(img, 54, 50, 210, 34, 10, accent)
-	drawCenteredText(img, fTag, 159, 73, colBG, "RANKING LUNAR")
-	drawText(img, fTitle, 54, 128, colText, stripEmojiForFont(title))
+	colGold := color.RGBA{245, 158, 11, 255}
+	colGoldBright := color.RGBA{251, 191, 36, 255}
+	colRowBorder := color.RGBA{180, 105, 18, 255}
+	colRowBG := color.RGBA{18, 15, 22, 255}
 
-	y := 156
+	fillRoundedRect(img, 124, 84, 194, 30, 14, colGold)
+	drawCenteredText(img, fTag, 221, 105, colBG, "RANKING LUNAR")
+	drawText(img, fTitle, 124, 150, colText, stripEmojiForFont(title))
+
+	rowH, gap, avR := 60, 10, 22
+	if len(entries) > 5 {
+		rowH, gap, avR = 42, 6, 16
+	}
+	y := 172
 	for _, e := range entries {
-		fillRoundedRect(img, 52, y, w-104, rowH, 14, colCardDark)
+		fillRoundedRect(img, 124, y, w-248, rowH, 16, colRowBorder)
+		fillRoundedRect(img, 126, y+2, w-252, rowH-4, 14, colRowBG)
+
 		posCol := colMuted
 		switch e.Pos {
 		case 1:
-			posCol = colAmber
+			posCol = colGoldBright
 		case 2:
 			posCol = color.RGBA{203, 213, 225, 255}
 		case 3:
 			posCol = color.RGBA{217, 119, 6, 255}
 		}
-		drawCenteredText(img, fPos, 88, y+46, posCol, fmt.Sprintf("#%d", e.Pos))
+		drawCenteredText(img, fPos, 164, y+rowH/2+8, posCol, fmt.Sprintf("#%d", e.Pos))
 
-		drawCircularAvatar(img, e.Avatar, 152, y+rowH/2, 26, fmt.Sprintf("%d", e.Pos), posCol)
+		drawCircleRing(img, 222, y+rowH/2, avR+2, 2, posCol)
+		drawCircularAvatar(img, e.Avatar, 222, y+rowH/2, avR, fmt.Sprintf("%d", e.Pos), posCol)
 
 		name := stripEmojiForFont(e.Name)
-		if len(name) > 24 {
-			name = name[:24] + "..."
+		if len(name) > 22 {
+			name = name[:22] + "..."
 		}
-		drawText(img, fName, 198, y+45, colText, name)
+		drawText(img, fName, 264, y+rowH/2+7, colText, name)
 
 		stat := stripEmojiForFont(e.Stat)
 		sw := 0
 		if fStat != nil {
 			sw = font.MeasureString(fStat, stat).Ceil()
 		}
-		drawText(img, fStat, w-76-sw, y+45, accent, stat)
-		y += rowH + 10
+		drawText(img, fStat, w-148-sw, y+rowH/2+7, colGoldBright, stat)
+		y += rowH + gap
 	}
 
-	drawText(img, fFoot, 54, h-44, colGrid, "LUNAR BOT  •  TOP RANKING")
+	drawCenteredText(img, fFoot, w/2, h-78, colMuted, "LUNAR BOT  •  TOP RANKING")
 	return encodePNG(img)
 }
 
