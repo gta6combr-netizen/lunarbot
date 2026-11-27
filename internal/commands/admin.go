@@ -546,8 +546,8 @@ func registerAdmin(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "ativar_grupo", Aliases: []string{"reativar", "alugar"}, Category: "admin", Dono: true, OnlyGroup: true,
-		Description: "Ativa/aluga o bot no grupo por N dias (padrão 30, 0 = permanente)",
+		Name: "ativar_grupo", Aliases: []string{"reativar"}, Category: "admin", Dono: true, OnlyGroup: true,
+		Description: "Ativa o bot no grupo por N dias (padrão 30, 0 = permanente)",
 		Execute: func(ctx *Context) error {
 			days := 30
 			if len(ctx.Args) > 0 {
@@ -564,8 +564,8 @@ func registerAdmin(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "desativar_grupo", Aliases: []string{"desalugar"}, Category: "admin", Dono: true, OnlyGroup: true,
-		Description: "Desativa o aluguel do bot neste grupo",
+		Name: "desativar_grupo", Category: "admin", Dono: true, OnlyGroup: true,
+		Description: "Desativa o bot neste grupo",
 		Execute: func(ctx *Context) error {
 			_ = ctx.DB.DeactivateGroup(ctx.From.String())
 			return ctx.Reply("⛔ Bot desativado neste grupo.")
