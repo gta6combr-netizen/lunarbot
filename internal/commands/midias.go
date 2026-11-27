@@ -17,7 +17,119 @@ var (
 	httpURLRE    = regexp.MustCompile(`https?://[^\s]+`)
 )
 
+func isSocialMediaURL(rawURL string) bool {
+	l := strings.ToLower(rawURL)
+	for _, d := range []string{"instagram.com", "tiktok.com", "facebook.com", "fb.watch", "fb.com", "x.com", "twitter.com", "pinterest.", "pin.it"} {
+		if strings.Contains(l, d) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeImage(data []byte, mediaType string) bool {
+	if strings.EqualFold(mediaType, "photo") || strings.EqualFold(mediaType, "image") {
+		return true
+	}
+	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+		return true // JPEG
+	}
+	if len(data) >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' {
+		return true // PNG
+	}
+	if len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+		return true // WEBP
+	}
+	return false
+}
+
+// downloadRapidAllInOne calls RapidAPI "Download All in One!" (Instagram, TikTok, Facebook, X, Pinterest).
+func downloadRapidAllInOne(apiKey, rawURL string) ([]byte, bool, error) {
+	if apiKey == "" {
+		return nil, false, fmt.Errorf("rapidapi key missing")
+	}
+	const host = "instagram-downloader-download-instagram-videos-stories1.p.rapidapi.com"
+	var endpoints []string
+	if custom := strings.TrimSpace(os.Getenv("RAPIDAPI_SOCIAL_ENDPOINT")); custom != "" {
+		if strings.HasPrefix(custom, "http") {
+			endpoints = append(endpoints, custom+"?url="+url.QueryEscape(rawURL))
+		} else {
+			if !strings.HasPrefix(custom, "/") {
+				custom = "/" + custom
+			}
+			endpoints = append(endpoints, "https://"+host+custom+"?url="+url.QueryEscape(rawURL))
+		}
+	}
+	for _, p := range []string{"/download", "/index", "/v1/download", "/"} {
+		endpoints = append(endpoints, "https://"+host+p+"?url="+url.QueryEscape(rawURL))
+	}
+
+	headers := map[string]string{
+		"X-RapidAPI-Key":  apiKey,
+		"X-RapidAPI-Host": host,
+		"User-Agent":      "Mozilla/5.0",
+	}
+
+	var lastErr error
+	for _, ep := range endpoints {
+		b, err := httpGetWithHeaders(ep, headers)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var resp struct {
+			DownloadURL string `json:"download_url"`
+			URL         string `json:"url"`
+			Type        string `json:"type"`
+			Items       []struct {
+				DownloadURL string `json:"download_url"`
+				URL         string `json:"url"`
+				Type        string `json:"type"`
+			} `json:"items"`
+		}
+		if err := jsonUnmarshal(b, &resp); err != nil {
+			lastErr = err
+			continue
+		}
+		mediaURL := resp.DownloadURL
+		mediaType := resp.Type
+		if mediaURL == "" {
+			mediaURL = resp.URL
+		}
+		if mediaURL == "" && len(resp.Items) > 0 {
+			mediaURL = resp.Items[0].DownloadURL
+			if mediaURL == "" {
+				mediaURL = resp.Items[0].URL
+			}
+			if resp.Items[0].Type != "" {
+				mediaType = resp.Items[0].Type
+			}
+		}
+		if !strings.HasPrefix(mediaURL, "http") {
+			lastErr = fmt.Errorf("download_url vazio")
+			continue
+		}
+		data, err := httpGetBytes(mediaURL)
+		if err != nil || len(data) < 512 {
+			lastErr = fmt.Errorf("erro ao baixar mídia: %v", err)
+			continue
+		}
+		return data, looksLikeImage(data, mediaType), nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("falha na RapidAPI")
+	}
+	return nil, false, lastErr
+}
+
 func downloadVideoFromURL(ctx *Context, rawURL string) ([]byte, error) {
+	// 0. RapidAPI All-in-One for Instagram, TikTok, Facebook, X, Pinterest
+	if ctx.Config.RapidAPIKey != "" && isSocialMediaURL(rawURL) {
+		if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, rawURL); err == nil && !isImg && len(data) > 1024 {
+			return data, nil
+		}
+	}
+
 	// 1. TikTok: try RapidAPI (if subscribed) then tikwm.com (free, no watermark)
 	if strings.Contains(strings.ToLower(rawURL), "tiktok.com") {
 		if ctx.Config.RapidAPIKey != "" {

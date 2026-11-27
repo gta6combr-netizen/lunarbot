@@ -282,14 +282,22 @@ func registerDownloads(r *Registry) {
 		},
 	})
 
-	videoDownloader := func(name, desc string) {
+	socialDownloader := func(name string, aliases []string, desc string) {
 		r.Register(&Command{
-			Name: name, Category: "downloads", Description: desc,
+			Name: name, Aliases: aliases, Category: "downloads", Description: desc,
 			Execute: func(ctx *Context) error {
 				if ctx.Q == "" || !strings.HasPrefix(ctx.Q, "http") {
 					return ctx.Reply("❗ Informe uma URL válida.")
 				}
 				ctx.React("📥")
+				if ctx.Config.RapidAPIKey != "" {
+					if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
+						if isImg {
+							return ctx.SendImage(data, "✅ Download concluído!")
+						}
+						return ctx.SendVideo(data, "✅ Download concluído!", false)
+					}
+				}
 				data, err := downloadVideoFromURL(ctx, ctx.Q)
 				if err != nil {
 					return ctx.Reply("❌ Erro ao baixar: " + err.Error())
@@ -298,14 +306,33 @@ func registerDownloads(r *Registry) {
 			},
 		})
 	}
-	videoDownloader("tiktok", "Baixa vídeo do TikTok sem marca d'água")
-	videoDownloader("instagram", "Baixa Reels/vídeo do Instagram")
+	socialDownloader("tiktok", []string{"tt"}, "Baixa vídeo/foto do TikTok sem marca d'água")
+	socialDownloader("instagram", []string{"ig", "insta", "reels"}, "Baixa Reels/post/story do Instagram")
+	socialDownloader("facebook", []string{"fb"}, "Baixa vídeo/Reels do Facebook")
+	socialDownloader("x", []string{"twitter", "tw"}, "Baixa vídeo/GIF/foto do X (Twitter)")
 
 	r.Register(&Command{
-		Name: "pinterest", Category: "downloads", Description: "Busca imagens no Pinterest",
+		Name: "pinterest", Aliases: []string{"pin"}, Category: "downloads",
+		Description: "Baixa vídeo/imagem de link do Pinterest ou busca pins",
 		Execute: func(ctx *Context) error {
 			if ctx.Q == "" {
-				return ctx.Reply("❗ Informe o termo de busca.")
+				return ctx.Reply("❗ Informe um link do Pinterest ou termo de busca.")
+			}
+			if strings.HasPrefix(ctx.Q, "http") {
+				ctx.React("📥")
+				if ctx.Config.RapidAPIKey != "" {
+					if data, isImg, err := downloadRapidAllInOne(ctx.Config.RapidAPIKey, ctx.Q); err == nil && len(data) > 512 {
+						if isImg {
+							return ctx.SendImage(data, "📌 Pinterest")
+						}
+						return ctx.SendVideo(data, "📌 Pinterest", false)
+					}
+				}
+				data, err := downloadVideoFromURL(ctx, ctx.Q)
+				if err != nil {
+					return ctx.Reply("❌ Erro ao baixar: " + err.Error())
+				}
+				return ctx.SendVideo(data, "📌 Pinterest", false)
 			}
 			return ctx.Reply("📌 Busca Pinterest: https://www.pinterest.com/search/pins/?q=" + strings.ReplaceAll(ctx.Q, " ", "%20"))
 		},
