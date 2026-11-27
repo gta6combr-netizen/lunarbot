@@ -27,16 +27,11 @@ func fetchReactionGIF(ep string) []byte {
 	if ep == "" {
 		return nil
 	}
-	tryWaifu := func() []byte {
-		var wp struct {
-			URL string `json:"url"`
+	validGIF := func(rawURL string, b []byte) bool {
+		if strings.Contains(strings.ToLower(rawURL), "giphy.com") {
+			return false
 		}
-		if err := httpGetJSON("https://api.waifu.pics/sfw/"+ep, &wp); err == nil && wp.URL != "" {
-			if b, err := httpGetBytes(wp.URL); err == nil && len(b) > 0 {
-				return b
-			}
-		}
-		return nil
+		return len(b) > 4096 && strings.HasPrefix(string(b[:6]), "GIF8")
 	}
 	tryNekosBest := func() []byte {
 		var nb struct {
@@ -45,7 +40,22 @@ func fetchReactionGIF(ep string) []byte {
 			} `json:"results"`
 		}
 		if err := httpGetJSON("https://nekos.best/api/v2/"+ep, &nb); err == nil && len(nb.Results) > 0 && nb.Results[0].URL != "" {
-			if b, err := httpGetBytes(nb.Results[0].URL); err == nil && len(b) > 0 {
+			if b, err := httpGetBytes(nb.Results[0].URL); err == nil && validGIF(nb.Results[0].URL, b) {
+				return b
+			}
+		}
+		return nil
+	}
+	tryWaifu := func() []byte {
+		wep := ep
+		if wep == "punch" {
+			wep = "kick"
+		}
+		var wp struct {
+			URL string `json:"url"`
+		}
+		if err := httpGetJSON("https://api.waifu.pics/sfw/"+wep, &wp); err == nil && wp.URL != "" {
+			if b, err := httpGetBytes(wp.URL); err == nil && validGIF(wp.URL, b) {
 				return b
 			}
 		}
@@ -56,17 +66,15 @@ func fetchReactionGIF(ep string) []byte {
 			URL string `json:"url"`
 		}
 		if err := httpGetJSON("https://api.otakugifs.xyz/gif?reaction="+ep, &og); err == nil && og.URL != "" {
-			if b, err := httpGetBytes(og.URL); err == nil && len(b) > 0 {
+			if b, err := httpGetBytes(og.URL); err == nil && validGIF(og.URL, b) {
 				return b
 			}
 		}
 		return nil
 	}
 
-	providers := []func() []byte{tryWaifu, tryNekosBest, tryOtakuGifs}
-	start := randInt(0, len(providers)-1)
-	for i := 0; i < len(providers); i++ {
-		if b := providers[(start+i)%len(providers)](); len(b) > 0 {
+	for _, fn := range []func() []byte{tryNekosBest, tryWaifu, tryOtakuGifs} {
+		if b := fn(); len(b) > 0 {
 			return b
 		}
 	}
@@ -78,7 +86,7 @@ func registerResenha(r *Registry) {
 		{Name: "beijo", Aliases: []string{"kiss", "beijar", "beijinho"}, Emoji: "💋", Verb: "beijou", GifFile: "beijo.gif", WaifuEP: "kiss"},
 		{Name: "abraco", Aliases: []string{"abracar", "abraço", "abraçar", "abracarforte", "hug"}, Emoji: "🤗", Verb: "abraçou", GifFile: "abracar.gif", WaifuEP: "hug"},
 		{Name: "tapa", Aliases: []string{"slap", "tapear"}, Emoji: "👋", Verb: "deu um tapa em", GifFile: "tapa.gif", WaifuEP: "slap"},
-		{Name: "soco", Aliases: []string{"socar", "punch"}, Emoji: "👊", Verb: "deu um soco em", GifFile: "soco.gif", WaifuEP: "kick"},
+		{Name: "soco", Aliases: []string{"socar", "punch"}, Emoji: "👊", Verb: "deu um soco em", GifFile: "soco.gif", WaifuEP: "punch"},
 		{Name: "chute", Aliases: []string{"chutar", "kick_fun"}, Emoji: "🦵", Verb: "chutou", GifFile: "chute.gif", WaifuEP: "kick"},
 		{Name: "mordida", Aliases: []string{"morder", "bite"}, Emoji: "😈", Verb: "mordeu", GifFile: "mordida.gif", WaifuEP: "bite"},
 		{Name: "carinho", Aliases: []string{"acariciar", "pat", "cafune", "cafuné"}, Emoji: "🥰", Verb: "fez carinho em", GifFile: "carinho.gif", WaifuEP: "pat"},
