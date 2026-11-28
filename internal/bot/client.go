@@ -394,6 +394,7 @@ func (c *Client) SendAudioWithCard(to types.JID, data []byte, ptt bool, title, b
 }
 
 func (c *Client) SendSticker(to types.JID, webpData []byte, quoted *events.Message) error {
+	webpData = injectWebPExif(webpData, c.cfg.Packname, c.cfg.Author)
 	up, err := c.wa.Upload(context.Background(), webpData, whatsmeow.MediaImage)
 	if err != nil {
 		return err
@@ -414,6 +415,7 @@ func (c *Client) SendSticker(to types.JID, webpData []byte, quoted *events.Messa
 }
 
 func (c *Client) SendStickerWithAudio(to types.JID, webpData, audioData []byte, isAnimated bool, quoted *events.Message) error {
+	webpData = injectWebPExif(webpData, c.cfg.Packname, c.cfg.Author)
 	upSticker, err := c.wa.Upload(context.Background(), webpData, whatsmeow.MediaImage)
 	if err != nil {
 		return err

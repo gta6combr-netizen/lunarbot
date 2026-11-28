@@ -46,8 +46,8 @@ func Load(rootDir string) (*Config, error) {
 		Prefix:             ".",
 		NomeDoBot:          "Lunar Bot",
 		NomeDoDono:         "LCSX",
-		Packname:           "Lunar Stickers",
-		Author:             "LCSX",
+		Packname:           "BY LCSX",
+		Author:             "BY LCSX",
 		CooldownPadrao:     3,
 		TempCleanupMinutes: 30,
 		Moeda: MoedaConfig{
