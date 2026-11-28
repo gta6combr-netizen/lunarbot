@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"nyxbot-go/internal/config"
+
+	"go.mau.fi/whatsmeow/types"
 )
 
 type gifReactionSpec struct {
@@ -544,16 +546,22 @@ func registerResenha(r *Registry) {
 				return ctx.Reply("❌ Sem participantes.")
 			}
 			parts := ctx.GroupInfo.Participants
+			shuffled := make([]types.GroupParticipant, len(parts))
+			copy(shuffled, parts)
+			for i := len(shuffled) - 1; i > 0; i-- {
+				j := randInt(0, i)
+				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+			}
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("🏆 *TOP %s DO GRUPO*\n\n", strings.ToUpper(ctx.CmdName)))
 			var entries []rankEntry
 			var mentions []string
 			limit := 5
-			if len(parts) < limit {
-				limit = len(parts)
+			if len(shuffled) < limit {
+				limit = len(shuffled)
 			}
 			for i := 0; i < limit; i++ {
-				p := parts[randInt(0, len(parts)-1)]
+				p := shuffled[i]
 				pct := randInt(50, 100)
 				mentions = append(mentions, p.JID.String())
 				sb.WriteString(fmt.Sprintf("%d. %s — *%d%%*\n", i+1, mentionTag(p.JID), pct))

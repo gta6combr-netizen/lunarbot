@@ -366,29 +366,17 @@ func registerUtilidades(r *Registry) {
 	}
 
 	r.Register(&Command{
-		Name: "rank", Aliases: []string{"top", "leaderboard"}, Category: "utilidades", Description: "Ranking de níveis, moedas ou vitórias",
+		Name: "rank", Aliases: []string{"top", "leaderboard", "rankcoins", "topcoins", "rankmoedas", "rankwins", "topwins", "rankvitorias"}, Category: "utilidades", Description: "Ranking de níveis, moedas ou vitórias",
 		Execute: func(ctx *Context) error {
 			by := "level"
-			if strings.EqualFold(ctx.Q, "coins") || strings.EqualFold(ctx.Q, "saldo") || strings.EqualFold(ctx.Q, "moedas") {
+			if strings.Contains(ctx.CmdName, "coin") || strings.Contains(ctx.CmdName, "moeda") ||
+				strings.EqualFold(ctx.Q, "coins") || strings.EqualFold(ctx.Q, "saldo") || strings.EqualFold(ctx.Q, "moedas") {
 				by = "coins"
-			} else if strings.EqualFold(ctx.Q, "wins") || strings.EqualFold(ctx.Q, "vitorias") {
+			} else if strings.Contains(ctx.CmdName, "win") || strings.Contains(ctx.CmdName, "vitoria") ||
+				strings.EqualFold(ctx.Q, "wins") || strings.EqualFold(ctx.Q, "vitorias") {
 				by = "wins"
 			}
 			return runRank(ctx, by)
-		},
-	})
-
-	r.Register(&Command{
-		Name: "rankcoins", Aliases: []string{"topcoins", "rankmoedas"}, Category: "utilidades", Description: "Ranking de moedas",
-		Execute: func(ctx *Context) error {
-			return runRank(ctx, "coins")
-		},
-	})
-
-	r.Register(&Command{
-		Name: "rankwins", Aliases: []string{"topwins", "rankvitorias"}, Category: "utilidades", Description: "Ranking de vitórias",
-		Execute: func(ctx *Context) error {
-			return runRank(ctx, "wins")
 		},
 	})
 

@@ -95,9 +95,9 @@ func registerExtras(r *Registry) {
 	simpleTip("criador", "infos", "Créditos", "👑 Base original NyxBot V2 (LCSX) • Rewrite Go.")
 
 	// Animais / Waifu APIs (cmds-aleatorios)
-	imgAPI := func(name, cat, desc, apiURL, field string) {
+	imgAPI := func(name string, aliases []string, cat, desc, apiURL, field string) {
 		r.Register(&Command{
-			Name: name, Category: cat, Description: desc,
+			Name: name, Aliases: aliases, Category: cat, Description: desc,
 			Execute: func(ctx *Context) error {
 				var res map[string]any
 				if err := httpGetJSON(apiURL, &res); err != nil {
@@ -115,21 +115,19 @@ func registerExtras(r *Registry) {
 			},
 		})
 	}
-	imgAPI("cat", "cmds-aleatorios", "Foto aleatória de gato", "https://api.thecatapi.com/v1/images/search", "url")
-	imgAPI("gato", "cmds-aleatorios", "Foto de gato", "https://some-random-api.com/img/cat", "link")
-	imgAPI("dog", "cmds-aleatorios", "Foto de cachorro", "https://dog.ceo/api/breeds/image/random", "message")
-	imgAPI("cachorro", "cmds-aleatorios", "Foto de cachorro", "https://some-random-api.com/img/dog", "link")
-	imgAPI("fox", "cmds-aleatorios", "Foto de raposa", "https://randomfox.ca/floof/", "image")
-	imgAPI("duck", "cmds-aleatorios", "Foto de pato", "https://random-d.uk/api/v2/random", "url")
-	imgAPI("bird", "cmds-aleatorios", "Foto de pássaro", "https://some-random-api.com/img/bird", "link")
-	imgAPI("koala", "cmds-aleatorios", "Foto de coala", "https://some-random-api.com/img/koala", "link")
-	imgAPI("kangaroo", "cmds-aleatorios", "Foto de canguru", "https://some-random-api.com/img/kangaroo", "link")
-	imgAPI("neko", "cmds-aleatorios", "Imagem neko anime", "https://api.waifu.pics/sfw/neko", "url")
-	imgAPI("waifu", "cmds-aleatorios", "Imagem waifu anime", "https://api.waifu.pics/sfw/waifu", "url")
-	imgAPI("hugimg", "cmds-aleatorios", "Imagem de abraço anime", "https://api.waifu.pics/sfw/hug", "url")
-	imgAPI("kissimg", "cmds-aleatorios", "Imagem de beijo anime", "https://api.waifu.pics/sfw/kiss", "url")
-	imgAPI("coffee", "cmds-aleatorios", "Foto aleatória de café", "https://coffee.alexflipnote.dev/random.json", "file")
-	imgAPI("panda", "cmds-aleatorios", "Foto de panda", "https://some-random-api.com/img/panda", "link")
+	imgAPI("gato", []string{"cat", "gatinho"}, "cmds-aleatorios", "Foto aleatória de gato", "https://some-random-api.com/img/cat", "link")
+	imgAPI("cachorro", []string{"dog", "doguinho"}, "cmds-aleatorios", "Foto de cachorro", "https://dog.ceo/api/breeds/image/random", "message")
+	imgAPI("fox", nil, "cmds-aleatorios", "Foto de raposa", "https://randomfox.ca/floof/", "image")
+	imgAPI("duck", nil, "cmds-aleatorios", "Foto de pato", "https://random-d.uk/api/v2/random", "url")
+	imgAPI("bird", nil, "cmds-aleatorios", "Foto de pássaro", "https://some-random-api.com/img/bird", "link")
+	imgAPI("koala", nil, "cmds-aleatorios", "Foto de coala", "https://some-random-api.com/img/koala", "link")
+	imgAPI("kangaroo", nil, "cmds-aleatorios", "Foto de canguru", "https://some-random-api.com/img/kangaroo", "link")
+	imgAPI("neko", nil, "cmds-aleatorios", "Imagem neko anime", "https://api.waifu.pics/sfw/neko", "url")
+	imgAPI("waifu", nil, "cmds-aleatorios", "Imagem waifu anime", "https://api.waifu.pics/sfw/waifu", "url")
+	imgAPI("hugimg", nil, "cmds-aleatorios", "Imagem de abraço anime", "https://api.waifu.pics/sfw/hug", "url")
+	imgAPI("kissimg", nil, "cmds-aleatorios", "Imagem de beijo anime", "https://api.waifu.pics/sfw/kiss", "url")
+	imgAPI("coffee", nil, "cmds-aleatorios", "Foto aleatória de café", "https://coffee.alexflipnote.dev/random.json", "file")
+	imgAPI("panda", nil, "cmds-aleatorios", "Foto de panda", "https://some-random-api.com/img/panda", "link")
 
 	// Casamento (Marriage)
 	r.Register(&Command{
