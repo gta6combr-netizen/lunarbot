@@ -61,10 +61,12 @@ func SynthesizeVoice(rootDir, elevenKey, elevenVoice, geminiKey, text string) ([
 func synthesizeElevenLabsTTS(rootDir, apiKey, voiceID, text string) ([]byte, error) {
 	payload := map[string]any{
 		"text":     text,
-		"model_id": "eleven_flash_v2_5",
+		"model_id": "eleven_multilingual_v2",
 		"voice_settings": map[string]any{
-			"stability":        0.45,
-			"similarity_boost": 0.80,
+			"stability":         0.35,
+			"similarity_boost":  0.75,
+			"style":             0.35,
+			"use_speaker_boost": true,
 		},
 	}
 	raw, err := json.Marshal(payload)
