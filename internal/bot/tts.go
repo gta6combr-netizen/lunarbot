@@ -38,7 +38,7 @@ func SynthesizeVoice(rootDir, elevenKey, elevenVoice, geminiKey, text string) ([
 	}
 	if elevenKey != "" {
 		if elevenVoice == "" {
-			elevenVoice = "NS7yU4WmAouJsg84X3Mg"
+			elevenVoice = "cgSgspJ2msm6clMCkdW9"
 		}
 		if ogg, err := synthesizeElevenLabsTTS(rootDir, elevenKey, elevenVoice, text); err == nil && len(ogg) > 0 {
 			return ogg, nil

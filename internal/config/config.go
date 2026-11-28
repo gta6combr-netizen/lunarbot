@@ -96,7 +96,7 @@ func Load(rootDir string) (*Config, error) {
 		cfg.ElevenLabsVoiceID = v
 	}
 	if cfg.ElevenLabsVoiceID == "" {
-		cfg.ElevenLabsVoiceID = "NS7yU4WmAouJsg84X3Mg"
+		cfg.ElevenLabsVoiceID = "cgSgspJ2msm6clMCkdW9"
 	}
 	if v := os.Getenv("GIPHY_API_KEY"); v != "" {
 		cfg.GiphyAPIKey = v
