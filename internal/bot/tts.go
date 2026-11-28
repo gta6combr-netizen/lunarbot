@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"nyxbot-go/internal/logger"
 	"strings"
 	"time"
 )
@@ -41,6 +42,8 @@ func SynthesizeVoice(rootDir, elevenKey, elevenVoice, geminiKey, text string) ([
 		}
 		if ogg, err := synthesizeElevenLabsTTS(rootDir, elevenKey, elevenVoice, text); err == nil && len(ogg) > 0 {
 			return ogg, nil
+		} else if err != nil {
+			logger.Yellow("[ElevenLabs TTS] erro: %v", err)
 		}
 	}
 	if geminiKey != "" {
@@ -84,7 +87,8 @@ func synthesizeElevenLabsTTS(rootDir, apiKey, voiceID, text string) ([]byte, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("elevenlabs HTTP %d", resp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("elevenlabs HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 	mp3, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil || len(mp3) < 256 {
