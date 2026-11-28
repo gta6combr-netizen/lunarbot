@@ -827,14 +827,14 @@ func makeStickerFace(rootDir string, size float64) font.Face {
 }
 
 func renderTextStickerFrames(rootDir, text string, bg, fg color.RGBA) ([][]byte, error) {
-	const w, h = 512, 400
-	f := makeStickerFace(rootDir, 62)
+	const w, h = 512, 430
+	f := makeStickerFace(rootDir, 68)
 	if f == nil {
 		return nil, fmt.Errorf("font unavailable")
 	}
 	defer f.Close()
 
-	fullLines := wrapText(f, text, 456)
+	fullLines := wrapText(f, text, 420)
 	if len(fullLines) == 0 {
 		return nil, fmt.Errorf("empty text")
 	}
@@ -866,9 +866,8 @@ func renderTextStickerFrames(rootDir, text string, bg, fg color.RGBA) ([][]byte,
 		counts = append(counts, totalRunes)
 	}
 
-	lineH := 68
-	startY := (h-(len(fullLines)-1)*lineH)/2 + 20
-	outline := color.RGBA{10, 10, 16, 255}
+	lineH := 74
+	startY := (h-(len(fullLines)-1)*lineH)/2 + 22
 
 	var frames [][]byte
 	for _, limit := range counts {
@@ -888,13 +887,6 @@ func renderTextStickerFrames(rootDir, text string, bg, fg color.RGBA) ([][]byte,
 			partial := string(lr[:take])
 			fullW := font.MeasureString(f, fullLines[i]).Ceil()
 			x := (w - fullW) / 2
-			for oy := -3; oy <= 3; oy++ {
-				for ox := -3; ox <= 3; ox++ {
-					if ox != 0 || oy != 0 {
-						drawText(img, f, x+ox, y+oy, outline, partial)
-					}
-				}
-			}
 			drawText(img, f, x, y, fg, partial)
 			y += lineH
 		}

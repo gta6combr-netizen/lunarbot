@@ -738,15 +738,15 @@ func registerMidias(r *Registry) {
 	})
 
 	r.Register(&Command{
-		Name: "ttp", Aliases: []string{"attp", "figtexto", "sticktexto"}, Category: "midias",
-		Description: "Cria figurinha de texto animada letra por letra (.sticktexto <texto>)",
+		Name: "ttp", Aliases: []string{"attp", "figtexto", "sticktexto", "brat"}, Category: "midias",
+		Description: "Cria figurinha de texto estilo Brat animada (.brat / .sticktexto <texto>)",
 		Execute: func(ctx *Context) error {
 			if ctx.Q == "" {
-				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.sticktexto Aaaaaa`")
+				return ctx.Reply("❗ Escreve o texto da figurinha! Ex: `.brat i'm your fav reference`")
 			}
 			ctx.React("✨")
-			bg := color.RGBA{0x56, 0x82, 0x03, 255} // #568203
-			fg := color.RGBA{255, 255, 255, 255}
+			bg := color.RGBA{0x8A, 0xCE, 0x00, 255} // Brat green #8ACE00
+			fg := color.RGBA{12, 12, 12, 255}       // Black text
 			frames, err := renderTextStickerFrames(ctx.Config.RootDir, ctx.Q, bg, fg)
 			if err != nil || len(frames) == 0 {
 				return ctx.Reply("❌ Erro ao gerar texto.")
@@ -766,7 +766,7 @@ func registerMidias(r *Registry) {
 			}
 			outWebp := filepath.Join(frameDir, "out.webp")
 			cmd := exec.Command("ffmpeg", "-y", "-framerate", "10", "-i", filepath.Join(frameDir, "f_%03d.png"),
-				"-vf", "scale=512:512,setsar=1", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "80", "-loop", "0", "-an", outWebp)
+				"-vf", "gblur=sigma=0.8,scale=512:512,setsar=1", "-vcodec", "libwebp", "-lossless", "0", "-q:v", "80", "-loop", "0", "-an", outWebp)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return ctx.Reply("❌ Erro ao animar figurinha: " + string(out))
 			}
